@@ -438,11 +438,15 @@ def generate_openai_embeddings(
     key: str,
     url: str = "https://api.openai.com/v1",
 ):
+    print("****generate_openai_embeddings: ", model, text, key)
     if isinstance(text, list):
         embeddings = generate_openai_batch_embeddings(model, text, key, url)
     else:
         embeddings = generate_openai_batch_embeddings(model, [text], key, url)
 
+    if embeddings is None:
+        log.exception(f"Embedding failed for {url}")
+        raise Exception(f"Embedding failed for {url}")
     return embeddings[0] if isinstance(text, str) else embeddings
 
 
