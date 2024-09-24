@@ -453,6 +453,14 @@ def generate_openai_embeddings(
 def generate_openai_batch_embeddings(
     model: str, texts: list[str], key: str, url: str = "https://api.openai.com/v1"
 ) -> Optional[list[list[float]]]:
+    def chunk_text(text, chunk_size):
+        return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+
+    if isinstance(texts, str):
+        texts = chunk_text(texts, 512)
+    else:
+        texts = [chunk for text in texts for chunk in chunk_text(text, 512)]
+
     try:
         r = requests.post(
             f"{url}/embeddings",
