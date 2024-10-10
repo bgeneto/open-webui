@@ -3,3 +3,7 @@
 </script>
 
 <Settings />
+
+<div class="menu-item">
+	<a href="/image">Image Gen</a>
+</div>
