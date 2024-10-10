@@ -48,7 +48,7 @@ from open_webui.env import (
 )
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from open_webui.utils.misc import (
     openai_chat_chunk_message_template,
@@ -125,12 +125,7 @@ app.include_router(utils.router, prefix="/utils", tags=["utils"])
 
 @app.get("/")
 async def get_status():
-    return {
-        "status": True,
-        "auth": WEBUI_AUTH,
-        "default_models": app.state.config.DEFAULT_MODELS,
-        "default_prompt_suggestions": app.state.config.DEFAULT_PROMPT_SUGGESTIONS,
-    }
+    return RedirectResponse(url="/chat")
 
 
 def get_function_module(pipe_id: str):
