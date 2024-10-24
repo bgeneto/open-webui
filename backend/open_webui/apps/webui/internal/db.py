@@ -14,7 +14,7 @@ from open_webui.env import (
     DATABASE_POOL_TIMEOUT,
 )
 from peewee_migrate import Router
-from sqlalchemy import Dialect, create_engine, types
+from sqlalchemy import Dialect, create_engine, types, Column, Integer, String, Text, Index, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.pool import QueuePool, NullPool
@@ -112,3 +112,16 @@ def get_session():
 
 
 get_db = contextmanager(get_session)
+
+
+class Preset(Base):
+    __tablename__ = "preset"
+    __table_args__ = {'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, ForeignKey('user.id'), nullable=False)
+    name = Column(String, nullable=False)
+    system_prompt = Column(Text, nullable=False)
+    advanced_params = Column(JSONField, nullable=False)
+
+    __table_args__ = (Index('idx_user_id_name', 'user_id', 'name', unique=True),)

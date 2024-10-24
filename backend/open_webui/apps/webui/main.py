@@ -19,6 +19,7 @@ from open_webui.apps.webui.routers import (
     tools,
     users,
     utils,
+    presets,  # Added import for presets router
 )
 from open_webui.apps.webui.utils import load_function_module_by_id
 from open_webui.config import (
@@ -121,6 +122,8 @@ app.include_router(functions.router, prefix="/functions", tags=["functions"])
 
 app.include_router(memories.router, prefix="/memories", tags=["memories"])
 app.include_router(utils.router, prefix="/utils", tags=["utils"])
+
+app.include_router(presets.router, prefix="/presets", tags=["presets"])  # Added presets router
 
 
 @app.get("/")
