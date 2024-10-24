@@ -116,6 +116,7 @@ get_db = contextmanager(get_session)
 
 class Preset(Base):
     __tablename__ = "preset"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String, ForeignKey('user.id'), nullable=False)
