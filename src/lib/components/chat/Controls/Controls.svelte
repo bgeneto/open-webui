@@ -13,6 +13,66 @@
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
+
+	// Function to save preset
+	const savePreset = async () => {
+		const presetName = prompt($i18n.t('Enter preset name:'));
+		if (!presetName) return;
+
+		const preset = {
+			name: presetName,
+			system_prompt: params.system,
+			advanced_params: params
+		};
+
+		try {
+			const response = await fetch('/api/presets/save', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(preset)
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to save preset');
+			}
+
+			alert($i18n.t('Preset saved successfully!'));
+		} catch (error) {
+			console.error(error);
+			alert($i18n.t('Failed to save preset.'));
+		}
+	};
+
+	// Function to load preset
+	const loadPreset = async () => {
+		try {
+			const response = await fetch('/api/presets');
+			if (!response.ok) {
+				throw new Error('Failed to fetch presets');
+			}
+
+			const presets = await response.json();
+			const presetName = prompt(
+				$i18n.t('Enter preset name to load:'),
+				presets.map((preset) => preset.name).join(', ')
+			);
+			if (!presetName) return;
+
+			const preset = presets.find((p) => p.name === presetName);
+			if (!preset) {
+				alert($i18n.t('Preset not found.'));
+				return;
+			}
+
+			params.system = preset.system_prompt;
+			params = { ...params, ...preset.advanced_params };
+		} catch (error) {
+			console.error(error);
+			alert($i18n.t('Failed to load preset.'));
+		}
+	};
 </script>
 
 <div class=" dark:text-white">
@@ -87,5 +147,22 @@
 				</div>
 			</div>
 		</Collapsible>
+
+		<hr class="my-2 border-gray-100 dark:border-gray-800" />
+
+		<div class="flex justify-between mt-4">
+			<button
+				class="bg-blue-500 text-white px-4 py-2 rounded"
+				on:click={savePreset}
+			>
+				{$i18n.t('Save Preset')}
+			</button>
+			<button
+				class="bg-green-500 text-white px-4 py-2 rounded"
+				on:click={loadPreset}
+			>
+				{$i18n.t('Load Preset')}
+			</button>
+		</div>
 	</div>
 </div>
