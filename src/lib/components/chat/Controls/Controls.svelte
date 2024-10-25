@@ -8,11 +8,48 @@
 	import Valves from '$lib/components/chat/Controls/Valves.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
-
+	import LoadPresetModal from './LoadPresetModal.svelte';
+	import { savePreset, getPresets, getPresetByName, deletePresetByName } from '$lib/apis/presets';
 	import { user } from '$lib/stores';
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
+
+	let showLoadPresetModal = false;
+	let presetName = '';
+	let validationMessage = '';
+
+	const handleSavePreset = async () => {
+		if (!presetName) {
+			validationMessage = 'Preset name cannot be empty';
+			return;
+		}
+
+		try {
+			await savePreset(user.token, {
+				name: presetName,
+				system_prompt: params.system,
+				advanced_params: params
+			});
+			validationMessage = 'Preset saved successfully';
+		} catch (error) {
+			validationMessage = error.detail || 'Failed to save preset';
+		}
+	};
+
+	const handleLoadPreset = async (preset) => {
+		params.system = preset.system_prompt;
+		params = { ...params, ...preset.advanced_params };
+	};
+
+	const handleDeletePreset = async (presetName) => {
+		try {
+			await deletePresetByName(user.token, presetName);
+			validationMessage = 'Preset deleted successfully';
+		} catch (error) {
+			validationMessage = error.detail || 'Failed to delete preset';
+		}
+	};
 </script>
 
 <div class=" dark:text-white">
@@ -87,5 +124,38 @@
 				</div>
 			</div>
 		</Collapsible>
+
+		<hr class="my-2 border-gray-100 dark:border-gray-800" />
+
+		<div class="flex justify-between mt-2">
+			<button
+				class="bg-blue-500 text-white px-4 py-2 rounded"
+				on:click={handleSavePreset}
+			>
+				{$i18n.t('Save Preset')}
+			</button>
+			<button
+				class="bg-green-500 text-white px-4 py-2 rounded"
+				on:click={() => {
+					showLoadPresetModal = true;
+				}}
+			>
+				{$i18n.t('Load Preset')}
+			</button>
+		</div>
+
+		{#if validationMessage}
+			<div class="text-red-500 mt-2">{validationMessage}</div>
+		{/if}
+
+		{#if showLoadPresetModal}
+			<LoadPresetModal
+				on:close={() => {
+					showLoadPresetModal = false;
+				}}
+				on:load={handleLoadPreset}
+				on:delete={handleDeletePreset}
+			/>
+		{/if}
 	</div>
 </div>
