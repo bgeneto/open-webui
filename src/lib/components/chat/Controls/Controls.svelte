@@ -8,11 +8,71 @@
 	import Valves from '$lib/components/chat/Controls/Valves.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
+	import Modal from '$lib/components/common/Modal.svelte';
+	import LoadPresetModal from './LoadPresetModal.svelte';
 
-	import { user } from '$lib/stores';
+	import { user, showLoadPresetModal } from '$lib/stores';
+	import { savePreset, loadPresets, deletePreset } from '$lib/apis/presets';
+
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
+
+	let showModal = false;
+	let presets = [];
+	let searchQuery = '';
+	let validationMessage = '';
+
+	// Function to save preset
+	const savePresetHandler = async () => {
+		const presetName = prompt($i18n.t('Enter preset name:'));
+		if (!presetName) {
+			validationMessage = $i18n.t('Preset name cannot be empty.');
+			return;
+		}
+
+		const preset = {
+			name: presetName,
+			system_prompt: params.system,
+			advanced_params: params
+		};
+
+		try {
+			const response = await savePreset(preset);
+			alert($i18n.t('Preset saved successfully!'));
+			validationMessage = '';
+		} catch (error) {
+			console.error(error);
+			validationMessage = $i18n.t('Failed to save preset.');
+		}
+	};
+
+	// Function to load preset
+	const loadPresetHandler = async () => {
+		try {
+			presets = await loadPresets();
+			showLoadPresetModal.set(true);
+		} catch (error) {
+			console.error(error);
+			alert($i18n.t('Failed to load presets.'));
+		}
+	};
+
+	const applyPreset = (preset) => {
+		params.system = preset.system_prompt;
+		params = { ...params, ...preset.advanced_params };
+		showLoadPresetModal.set(false);
+	};
+
+	const handleDeletePreset = async (preset) => {
+		try {
+			await deletePreset(preset.name);
+			presets = presets.filter((p) => p.name !== preset.name);
+		} catch (error) {
+			console.error(error);
+			alert($i18n.t('Failed to delete preset.'));
+		}
+	};
 </script>
 
 <div class=" dark:text-white">
@@ -87,5 +147,34 @@
 				</div>
 			</div>
 		</Collapsible>
+
+		<hr class="my-2 border-gray-100 dark:border-gray-800" />
+
+		<div class="flex justify-between mt-4">
+			<button
+				class="bg-blue-500 text-white px-4 py-2 rounded"
+				on:click={savePresetHandler}
+			>
+				{$i18n.t('Save Preset')}
+			</button>
+			<button
+				class="bg-green-500 text-white px-4 py-2 rounded"
+				on:click={loadPresetHandler}
+			>
+				{$i18n.t('Load Preset')}
+			</button>
+		</div>
+
+		{#if validationMessage}
+			<div class="text-red-500 mt-2">{validationMessage}</div>
+		{/if}
 	</div>
 </div>
+
+<LoadPresetModal
+	bind:showModal={$showLoadPresetModal}
+	{presets}
+	bind:searchQuery
+	applyPreset={applyPreset}
+	deletePreset={handleDeletePreset}
+/>
