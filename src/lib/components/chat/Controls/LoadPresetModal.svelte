@@ -87,7 +87,6 @@
           </li>
         {/each}
       </ul>
-      <Pagination {page} {count}={filteredPresets.length} {perPage} />
     </div>
   </div>
 </div>
