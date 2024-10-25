@@ -8,11 +8,82 @@
 	import Valves from '$lib/components/chat/Controls/Valves.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
+	import Modal from '$lib/components/common/Modal.svelte';
 
 	import { user } from '$lib/stores';
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
+
+	let showModal = false;
+	let presets = [];
+	let searchQuery = '';
+	let validationMessage = '';
+
+	// Function to save preset
+	const savePreset = async () => {
+		const presetName = prompt($i18n.t('Enter preset name:'));
+		if (!presetName) {
+			validationMessage = $i18n.t('Preset name cannot be empty.');
+			return;
+		}
+
+		const preset = {
+			name: presetName,
+			system_prompt: params.system,
+			advanced_params: params
+		};
+
+		try {
+			const response = await fetch('/api/presets/save', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(preset)
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				validationMessage = $i18n.t(errorData.detail);
+				throw new Error('Failed to save preset');
+			}
+
+			alert($i18n.t('Preset saved successfully!'));
+			validationMessage = '';
+		} catch (error) {
+			console.error(error);
+			alert($i18n.t('Failed to save preset.'));
+		}
+	};
+
+	// Function to load preset
+	const loadPreset = async () => {
+		try {
+			const response = await fetch('/api/presets');
+			if (!response.ok) {
+				throw new Error('Failed to fetch presets');
+			}
+
+			presets = await response.json();
+			showModal = true;
+		} catch (error) {
+			console.error(error);
+			alert($i18n.t('Failed to load presets.'));
+		}
+	};
+
+	const applyPreset = (preset) => {
+		params.system = preset.system_prompt;
+		params = { ...params, ...preset.advanced_params };
+		showModal = false;
+	};
+
+	const filteredPresets = () => {
+		return presets.filter((preset) =>
+			preset.name.toLowerCase().includes(searchQuery.toLowerCase())
+		);
+	};
 </script>
 
 <div class=" dark:text-white">
@@ -87,5 +158,51 @@
 				</div>
 			</div>
 		</Collapsible>
+
+		<hr class="my-2 border-gray-100 dark:border-gray-800" />
+
+		<div class="flex justify-between mt-4">
+			<button
+				class="bg-blue-500 text-white px-4 py-2 rounded"
+				on:click={savePreset}
+			>
+				{$i18n.t('Save Preset')}
+			</button>
+			<button
+				class="bg-green-500 text-white px-4 py-2 rounded"
+				on:click={loadPreset}
+			>
+				{$i18n.t('Load Preset')}
+			</button>
+		</div>
+
+		{#if validationMessage}
+			<div class="text-red-500 mt-2">{validationMessage}</div>
+		{/if}
 	</div>
 </div>
+
+{#if showModal}
+	<Modal on:close={() => (showModal = false)}>
+		<div class="p-4">
+			<input
+				type="text"
+				placeholder={$i18n.t('Search presets')}
+				class="w-full mb-4 p-2 border rounded"
+				bind:value={searchQuery}
+			/>
+			<ul>
+				{#each filteredPresets() as preset}
+					<li class="mb-2">
+						<button
+							class="w-full text-left p-2 border rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+							on:click={() => applyPreset(preset)}
+						>
+							{preset.name}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	</Modal>
+{/if}
