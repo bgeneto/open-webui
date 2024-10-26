@@ -8,11 +8,26 @@
 	import Valves from '$lib/components/chat/Controls/Valves.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
+	import Modal from '$lib/components/common/Modal.svelte';
 
 	import { user } from '$lib/stores';
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
+
+	let showSavePresetModal = false;
+	let showLoadPresetModal = false;
+	let presetName = '';
+
+	const savePreset = () => {
+		// Logic to save the preset to the database
+		showSavePresetModal = false;
+	};
+
+	const loadPreset = (preset) => {
+		// Logic to load the preset from the database
+		showLoadPresetModal = false;
+	};
 </script>
 
 <div class=" dark:text-white">
@@ -87,5 +102,65 @@
 				</div>
 			</div>
 		</Collapsible>
+
+		<hr class="my-2 border-gray-50 dark:border-gray-700/10" />
+
+		<div class="flex justify-between mt-2">
+			<button
+				class="bg-blue-500 text-white px-4 py-2 rounded"
+				on:click={() => {
+					showSavePresetModal = true;
+				}}
+			>
+				{$i18n.t('Save Preset')}
+			</button>
+			<button
+				class="bg-green-500 text-white px-4 py-2 rounded"
+				on:click={() => {
+					showLoadPresetModal = true;
+				}}
+			>
+				{$i18n.t('Load Preset')}
+			</button>
+		</div>
 	</div>
 </div>
+
+{#if showSavePresetModal}
+	<Modal on:close={() => (showSavePresetModal = false)}>
+		<div class="p-4">
+			<h2 class="text-lg font-medium mb-4">{$i18n.t('Save Preset')}</h2>
+			<input
+				type="text"
+				class="w-full p-2 border rounded mb-4"
+				placeholder={$i18n.t('Enter preset name')}
+				bind:value={presetName}
+			/>
+			<div class="flex justify-end">
+				<button
+					class="bg-blue-500 text-white px-4 py-2 rounded"
+					on:click={savePreset}
+				>
+					{$i18n.t('Save')}
+				</button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showLoadPresetModal}
+	<Modal on:close={() => (showLoadPresetModal = false)}>
+		<div class="p-4">
+			<h2 class="text-lg font-medium mb-4">{$i18n.t('Load Preset')}</h2>
+			<!-- List of presets will be displayed here -->
+			<div class="flex justify-end">
+				<button
+					class="bg-green-500 text-white px-4 py-2 rounded"
+					on:click={() => loadPreset(selectedPreset)}
+				>
+					{$i18n.t('Load')}
+				</button>
+			</div>
+		</div>
+	</Modal>
+{/if}
