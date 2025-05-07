@@ -18,6 +18,8 @@
 		latest: ''
 	};
 
+	const ENABLE_UPDATES = import.meta.env.VITE_ENABLE_UPDATES === 'true';
+
 	const checkForVersionUpdates = async () => {
 		updateAvailable = null;
 		version = await getVersionUpdates(localStorage.token).catch((error) => {
@@ -38,7 +40,9 @@
 			return '';
 		});
 
-		checkForVersionUpdates();
+		if (ENABLE_UPDATES) {
+			checkForVersionUpdates();
+		}
 	});
 </script>
 
