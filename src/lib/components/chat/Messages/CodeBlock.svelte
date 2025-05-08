@@ -3,20 +3,19 @@
 
 	import { v4 as uuidv4 } from 'uuid';
 
-	import { getContext, onMount, tick, onDestroy } from 'svelte';
 	import { copyToClipboard } from '$lib/utils';
+	import { getContext, onDestroy, onMount, tick } from 'svelte';
 
 	import 'highlight.js/styles/github-dark.min.css';
 
-	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
+	import { executeCode } from '$lib/apis/utils';
 	import CodeEditor from '$lib/components/common/CodeEditor.svelte';
 	import SvgPanZoom from '$lib/components/common/SVGPanZoom.svelte';
-	import { config } from '$lib/stores';
-	import { executeCode } from '$lib/apis/utils';
-	import { toast } from 'svelte-sonner';
-	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronUpDown from '$lib/components/icons/ChevronUpDown.svelte';
 	import CommandLine from '$lib/components/icons/CommandLine.svelte';
+	import { config } from '$lib/stores';
+	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
+	import { toast } from 'svelte-sonner';
 
 	const i18n = getContext('i18n');
 
@@ -122,6 +121,111 @@
 		// If none of the above conditions met, it's probably not Python code
 		return false;
 	};
+
+	const checkCppCode = (str) => {
+		// C++-exclusive keywords and headers
+		const cppSyntax = [
+			'std::',
+			'cout',
+			'cin',
+			'class ',
+			'template',
+			'namespace ',
+			'new ',
+			'delete ',
+			'public:',
+			'private:',
+			'protected:',
+			'using namespace std',
+			'operator',
+			'friend',
+			'virtual',
+			'override',
+			'nullptr',
+			'#include <iostream>',
+			'#include <vector>',
+			'#include <string>'
+		];
+		return cppSyntax.some((s) => str.includes(s));
+	};
+
+	const checkCCode = (str) => {
+		// C-specific keywords/headers, but not C++-exclusive
+		if (checkCppCode(str)) return false;
+		const cSyntax = [
+			'#include <stdio.h>',
+			'#include <stdlib.h>',
+			'#include <string.h>',
+			'printf',
+			'scanf',
+			'malloc',
+			'free',
+			'NULL',
+			'size_t',
+			'struct ',
+			'typedef '
+		];
+		return cSyntax.some((s) => str.includes(s));
+	};
+
+	const checkFortranCode = (str) => {
+		const fortranSyntax = [
+			'program ',
+			'end program',
+			'implicit none',
+			'real',
+			'integer',
+			'write(',
+			'read(',
+			'print *',
+			'subroutine ',
+			'function ',
+			'module ',
+			'contains',
+			'allocate('
+		];
+		return fortranSyntax.some((s) => str.toLowerCase().includes(s));
+	};
+
+	function isCodeSafe(code, lang) {
+		const riskyPatterns = [
+			/\bsystem\s*\(/i,
+			/\bpopen\s*\(/i,
+			/\bexec/i,
+			/\bfork\s*\(/i,
+			/\bspawn/i,
+			/\bCreateProcess/i,
+			/\bWinExec/i,
+			/\bShellExecute/i,
+			/\bdlopen\s*\(/i,
+			/\bLoadLibrary/i,
+			/\bSetWindowsHook/i,
+			/\bptrace/i,
+			/\bkill\s*\(/i,
+			/\bsignal\s*\(/i,
+			/\batexit\s*\(/i,
+			/\bexit\s*\(/i,
+			/\babort\s*\(/i,
+			/\bremove\s*\(/i,
+			/\bunlink\s*\(/i,
+			/\brename\s*\(/i,
+			/#include\s*<windows\.h>/i,
+			/#include\s*<unistd\.h>/i,
+			/#include\s*<dlfcn\.h>/i,
+			/#include\s*<sys\/types\.h>/i,
+			/#include\s*<sys\/wait\.h>/i,
+			/#include\s*<sys\/ptrace\.h>/i,
+			/#include\s*<process\.h>/i
+		];
+		const fortranRisky = [
+			/\bcall\s+system\b/i,
+			/\bexecute_command_line\b/i,
+			/\bstop\b/i,
+			/\bexit\b/i
+		];
+		const patterns = lang === 'fortran' ? fortranRisky : riskyPatterns;
+		return !patterns.some((pat) => pat.test(code));
+	}
 
 	const executePython = async (code) => {
 		result = null;
@@ -314,6 +418,58 @@
 		};
 	};
 
+	const executeJupyterCompiled = async (lang, code) => {
+		result = null;
+		stdout = null;
+		stderr = null;
+		executing = true;
+
+		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
+			toast.error('Jupyter engine is required for C/C++/Fortran execution.');
+			executing = false;
+			return;
+		}
+
+		if (!isCodeSafe(code, lang)) {
+			toast.error('Code contains potentially dangerous operations and was blocked.');
+			executing = false;
+			return;
+		}
+
+		const ext = lang === 'c' ? 'c' : lang === 'cpp' ? 'cpp' : 'f90';
+		const filename = `temp_${uuidv4()}.${ext}`;
+		const writefile = `%%writefile ${filename}\n${code}`;
+		let compileCmd = '';
+		if (lang === 'c') compileCmd = `gcc ${filename}`;
+		if (lang === 'cpp') compileCmd = `g++ ${filename}`;
+		if (lang === 'fortran') compileCmd = `gfortran ${filename}`;
+		const bash = `%%bash\n${compileCmd}\n./a.out`;
+
+		// Write file
+		const writeOutput = await executeCode(localStorage.token, writefile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!writeOutput) {
+			executing = false;
+			return;
+		}
+
+		// Compile and run
+		const output = await executeCode(localStorage.token, bash).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (output) {
+			if (output['stdout']) stdout = output['stdout'];
+			if (output['stderr']) stderr = output['stderr'];
+			if (output['result']) result = output['result'];
+		}
+
+		executing = false;
+	};
+
 	let debounceTimeout;
 
 	const drawMermaidDiagram = async () => {
@@ -439,7 +595,7 @@
 						</div>
 					</button>
 
-					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)))}
+					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)) || lang.toLowerCase() === 'c' || lang.toLowerCase() === 'cpp' || lang.toLowerCase() === 'fortran' || (lang === '' && (checkCCode(code) || checkCppCode(code) || checkFortranCode(code))))}
 						{#if executing}
 							<div class="run-code-button bg-none border-none p-1 cursor-not-allowed">
 								{$i18n.t('Running')}
@@ -450,16 +606,31 @@
 								on:click={async () => {
 									code = _code;
 									await tick();
-									executePython(code);
+									if (
+										lang.toLowerCase() === 'python' ||
+										lang.toLowerCase() === 'py' ||
+										(lang === '' && checkPythonCode(code))
+									) {
+										executePython(code);
+									} else if (
+										lang.toLowerCase() === 'c' ||
+										lang.toLowerCase() === 'cpp' ||
+										lang.toLowerCase() === 'fortran' ||
+										(lang === '' &&
+											(checkCCode(code) || checkCppCode(code) || checkFortranCode(code)))
+									) {
+										let detectedLang = lang.toLowerCase();
+										if (lang === '') {
+											if (checkCppCode(code)) detectedLang = 'cpp';
+											else if (checkCCode(code)) detectedLang = 'c';
+											else if (checkFortranCode(code)) detectedLang = 'fortran';
+										}
+										executeJupyterCompiled(detectedLang, code);
+									}
 								}}
 							>
-								<div>
-									<CommandLine className="size-3" />
-								</div>
-
-								<div>
-									{$i18n.t('Run')}
-								</div>
+								<CommandLine className="size-3" />
+								<span>{$i18n.t('Run')}</span>
 							</button>
 						{/if}
 					{/if}
