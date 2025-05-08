@@ -467,6 +467,10 @@
 			if (output['result']) result = output['result'];
 		}
 
+		// Cleanup: delete the source file and a.out
+		const cleanupCmd = `%%bash\nrm -f ${filename} a.out`;
+		await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+
 		executing = false;
 	};
 
