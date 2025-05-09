@@ -330,11 +330,59 @@
 			/\bchown\s*\(/i,
 			/\bchgrp\s*\(/i
 		];
+		const latexRisky = [
+			/\\write(\d*)/i,
+			/\\write18/i,
+			/\\immediate/i,
+			/\\input/i,
+			/\\@@input/i,
+			/\\openout/i,
+			/\\openin/i,
+			/\\read(\d*)/i,
+			/\\closeout/i,
+			/\\closein/i,
+			/\\usepackage\s*\{shellesc\}/i,
+			/\\usepackage\s*\{catchfile\}/i,
+			/\\catcode/i,
+			/\\newwrite/i,
+			/\\newread/i,
+			/\\loop/i,
+			/\\everyeof/i,
+			/\\everypar/i,
+			/\\everymath/i,
+			/\\everydisplay/i,
+			/\\everycr/i,
+			/\\everyjob/i,
+			/\\everyhbox/i,
+			/\\everyvbox/i,
+			/\\everygroup/i,
+			/\\everyline/i,
+			/\\everyrow/i,
+			/\\everysection/i,
+			/\\everychapter/i,
+			/\\everypage/i,
+			/\\everyfootnote/i,
+			/\\special/i,
+			/\\jobname/i,
+			/\\message/i,
+			/\\errmessage/i,
+			/\\batchmode/i,
+			/\\scrollmode/i,
+			/\\nonstopmode/i,
+			/\\errorstopmode/i,
+			/\\chardef/i,
+			/\\advance/i,
+			/\\multiply/i,
+			/\\divide/i,
+			/\\endinput/i,
+			/\\dump/i
+		];
 		let patterns = riskyPatterns;
-		if (['fortran', 'lua', 'php'].includes(lang?.toLowerCase?.())) {
+		if (['fortran', 'lua', 'php', 'latex'].includes(lang?.toLowerCase?.())) {
 			if (lang.toLowerCase() === 'fortran') patterns = fortranRisky;
 			if (lang.toLowerCase() === 'lua') patterns = luaRisky;
 			if (lang.toLowerCase() === 'php') patterns = phpRisky;
+			if (lang.toLowerCase() === 'latex') patterns = latexRisky;
 		}
 		return !patterns.some((pat) => pat.test(code));
 	}
@@ -683,7 +731,7 @@
 		const filename = `temp_${uuidv4()}.tex`;
 		const pdffile = filename.replace(/\.tex$/, '.pdf');
 		const writefile = `%%writefile ${filename}\n${code}`;
-		const compileCmd = `pdflatex -interaction=nonstopmode -halt-on-error ${filename}`;
+		const compileCmd = `timeout 59s pdflatex -interaction=nonstopmode -halt-on-error ${filename}`;
 		const bashCompile = `%%bash\n${compileCmd}`;
 		const base64Cmd = `%%bash\nif [ -f ${pdffile} ]; then base64 ${pdffile}; fi`;
 		const cleanupCmd = `%%bash\nrm -f ${filename} ${filename.replace(/\.tex$/, '.aux')} ${filename.replace(/\.tex$/, '.log')} ${pdffile}`;
@@ -722,9 +770,9 @@
 					data: `data:application/pdf;base64,${base64Output.stdout.replace(/\s/g, '')}`
 				}
 			];
-			result = 'PDF generated below.';
+			result = 'PDF generated';
 		} else {
-			stderr = 'PDF generation failed.';
+			stderr = 'PDF generation failed';
 		}
 
 		// Cleanup
