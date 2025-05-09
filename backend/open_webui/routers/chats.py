@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_permission
 from fastapi.responses import StreamingResponse
-from open_webui.utils.docx_generator import markdown_to_docx
+from open_webui.utils.docx_generator import markdown_to_docx, sanitize_filename
 from open_webui.utils.misc import create_messages_list
 
 log = logging.getLogger(__name__)
@@ -829,10 +829,11 @@ async def export_chat_docx(id: str, user=Depends(get_verified_user)):
         [f"### {m['role'].upper()}\n{m['content']}\n\n" for m in messages]
     )
     docx_bytes = markdown_to_docx(chat_md)
+    safe_title = sanitize_filename(chat.chat["title"])
     return StreamingResponse(
         iter([docx_bytes]),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
-            "Content-Disposition": f'attachment; filename="chat-{chat.chat["title"]}.docx"'
+            "Content-Disposition": f'attachment; filename="chat-{safe_title}.docx"'
         },
     )
