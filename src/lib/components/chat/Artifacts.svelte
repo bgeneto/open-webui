@@ -237,14 +237,12 @@
 		if (contents.length === 0) {
 			showControls.set(false);
 			showArtifacts.set(false);
-		}
-
-		selectedContentIdx = contents ? contents.length - 1 : 0;
-
-		if (foundLatex) {
+		} else {
 			showArtifacts.set(true);
 			showControls.set(true);
 		}
+
+		selectedContentIdx = contents ? contents.length - 1 : 0;
 	};
 
 	// LaTeX PDF generation logic
