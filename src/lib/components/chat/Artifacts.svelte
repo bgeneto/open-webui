@@ -97,13 +97,14 @@
 		while ((match = codeBlockRegex.exec(content))) {
 			blocks.push(match[1]);
 		}
+
 		// Detect inline LaTeX: \\documentclass or \\begin{document} ... \\end{document}
-		const inlineLatexRegex = /(\\documentclass[\s\S]*?\\end{document})/gi;
-		while ((match = inlineLatexRegex.exec(content))) {
-			blocks.push(match[1]);
-		}
-		// Remove duplicates
-		return Array.from(new Set(blocks));
+		// const inlineLatexRegex = /(\\documentclass[\s\S]*?\\end{document})/gi;
+		// while ((match = inlineLatexRegex.exec(content))) {
+		// 	blocks.push(match[1]);
+		// }
+
+		return blocks;
 	}
 
 	const getContents = async () => {
