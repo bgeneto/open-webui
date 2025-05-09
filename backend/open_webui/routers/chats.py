@@ -23,6 +23,9 @@ from pydantic import BaseModel
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_permission
+from fastapi.responses import StreamingResponse
+from open_webui.utils.docx_generator import markdown_to_docx
+from open_webui.utils.misc import create_messages_list
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -804,3 +807,32 @@ async def delete_all_tags_by_id(id: str, user=Depends(get_verified_user)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
         )
+
+
+############################
+# ExportChatDocx
+############################
+
+
+@router.get("/{id}/export_docx")
+async def export_chat_docx(id: str, user=Depends(get_verified_user)):
+    chat = Chats.get_chat_by_id_and_user_id(id, user.id)
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
+        )
+    # Reuse the logic for markdown export (as in txt export)
+    history = chat.chat["history"]
+    current_id = history.get("currentId")
+    messages = create_messages_list(history, current_id)
+    chat_md = "".join(
+        [f"### {m['role'].upper()}\n{m['content']}\n\n" for m in messages]
+    )
+    docx_bytes = markdown_to_docx(chat_md)
+    return StreamingResponse(
+        iter([docx_bytes]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="chat-{chat.chat["title"]}.docx"'
+        },
+    )

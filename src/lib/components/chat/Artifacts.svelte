@@ -485,11 +485,6 @@
 									title="Content"
 									src={latexResults[selectedContentIdx]}
 									class="w-full border-0 h-full rounded-none"
-									sandbox="allow-scripts{($settings?.iframeSandboxAllowForms ?? false)
-										? ' allow-forms'
-										: ''}{($settings?.iframeSandboxAllowSameOrigin ?? false)
-										? ' allow-same-origin'
-										: ''}"
 								></iframe>
 							{:else}
 								<div class="flex items-center justify-center h-full">

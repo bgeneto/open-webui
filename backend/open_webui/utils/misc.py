@@ -53,6 +53,27 @@ def get_message_list(messages, message_id):
     return message_list
 
 
+def create_messages_list(history, current_id=None):
+    """
+    Given a chat history dict and current_id, return a flat list of messages in order.
+    This mimics the frontend's createMessagesList utility for backend use.
+    """
+    # If history is already a list, just return it
+    if isinstance(history, list):
+        return history
+    # If history is a dict with 'messages' and 'currentId'
+    messages = []
+    pointer = current_id or history.get("currentId")
+    all_messages = history.get("messages", {})
+    # Traverse from root to current_id
+    stack = []
+    while pointer and pointer in all_messages:
+        stack.append(all_messages[pointer])
+        pointer = all_messages[pointer].get("parentId")
+    messages = list(reversed(stack))
+    return messages
+
+
 def get_messages_content(messages: list[dict]) -> str:
     return "\n".join(
         [
