@@ -731,7 +731,7 @@
 		const filename = `temp_${uuidv4()}.tex`;
 		const pdffile = filename.replace(/\.tex$/, '.pdf');
 		const writefile = `%%writefile ${filename}\n${code}`;
-		const compileCmd = `timeout 59s pdflatex -interaction=nonstopmode -halt-on-error ${filename}`;
+		const compileCmd = `timeout 59s pdflatex -interaction=nonstopmode -halt-on-error -no-shell-escape ${filename}`;
 		const bashCompile = `%%bash\n${compileCmd}`;
 		const base64Cmd = `%%bash\nif [ -f ${pdffile} ]; then base64 ${pdffile}; fi`;
 		const cleanupCmd = `%%bash\nrm -f ${filename} ${filename.replace(/\.tex$/, '.aux')} ${filename.replace(/\.tex$/, '.log')} ${pdffile}`;
