@@ -177,16 +177,62 @@
 			'implicit none',
 			'real',
 			'integer',
-			'write(',
-			'read(',
+			'write',
 			'print *',
 			'subroutine ',
 			'function ',
 			'module ',
+			'end module',
 			'contains',
-			'allocate('
+			'allocate'
 		];
 		return fortranSyntax.some((s) => str.toLowerCase().includes(s));
+	};
+
+	const checkLuaCode = (str) => {
+		const luaSyntax = [
+			'function ',
+			'local ',
+			'end',
+			'then',
+			'elseif',
+			'repeat',
+			'until',
+			'require',
+			'pairs',
+			'ipairs',
+			'print(',
+			'--',
+			'nil',
+			'table.',
+			'math.',
+			'os.',
+			'io.'
+		];
+		return luaSyntax.some((s) => str.includes(s));
+	};
+
+	const checkPhpCode = (str) => {
+		const phpSyntax = [
+			'<?php',
+			'echo ',
+			'$',
+			'->',
+			'::',
+			'function ',
+			'public ',
+			'private ',
+			'protected ',
+			'use ',
+			'namespace ',
+			'require_once',
+			'include_once',
+			'array(',
+			'null',
+			'true',
+			'false'
+		];
+		return phpSyntax.some((s) => str.includes(s));
 	};
 
 	function isCodeSafe(code, lang) {
@@ -222,10 +268,44 @@
 		const fortranRisky = [
 			/\bcall\s+system\b/i,
 			/\bexecute_command_line\b/i,
-			/\bstop\b/i,
-			/\bexit\b/i
+			/\binquire\b/i,
+			/\bflush\b/i,
+			/\bget_environment_variable\b/i
 		];
-		const patterns = lang === 'fortran' ? fortranRisky : riskyPatterns;
+		const luaRisky = [
+			/require\s*\(/i,
+			/os\.execute/i,
+			/io\.popen/i,
+			/os\.remove/i,
+			/os\.rename/i,
+			/os\.exit/i,
+			/os\.setlocale/i,
+			/os\.getenv/i,
+			/os\.tmpname/i
+		];
+		const phpRisky = [
+			/\bsystem\s*\(/i,
+			/\bexec\s*\(/i,
+			/\bpopen\s*\(/i,
+			/\bshell_exec\s*\(/i,
+			/\bpassthru\s*\(/i,
+			/\bproc_open\s*\(/i,
+			/\bpcntl_exec\s*\(/i,
+			/\bpcntl_fork\s*\(/i,
+			/\bdelete\s*\(/i,
+			/\bunlink\s*\(/i,
+			/\bmove_uploaded_file\s*\(/i,
+			/\bcopy\s*\(/i,
+			/\bchmod\s*\(/i,
+			/\bchown\s*\(/i,
+			/\bchgrp\s*\(/i
+		];
+		let patterns = riskyPatterns;
+		if (['fortran', 'lua', 'php'].includes(lang?.toLowerCase?.())) {
+			if (lang.toLowerCase() === 'fortran') patterns = fortranRisky;
+			if (lang.toLowerCase() === 'lua') patterns = luaRisky;
+			if (lang.toLowerCase() === 'php') patterns = phpRisky;
+		}
 		return !patterns.some((pat) => pat.test(code));
 	}
 
@@ -442,10 +522,11 @@
 		const filename = `temp_${uuidv4()}.${ext}`;
 		const writefile = `%%writefile ${filename}\n${code}`;
 		let compileCmd = '';
-		if (lang === 'c') compileCmd = `gcc ${filename}`;
-		if (lang === 'cpp') compileCmd = `g++ ${filename}`;
-		if (lang === 'fortran') compileCmd = `gfortran ${filename}`;
-		const bash = `%%bash\n${compileCmd}\n./a.out`;
+		let compilerOptions = '-O2 -lm -fopenmp';
+		if (lang === 'c') compileCmd = `gcc ${compilerOptions} ${filename}`;
+		if (lang === 'cpp') compileCmd = `g++ ${compilerOptions} ${filename}`;
+		if (lang === 'fortran') compileCmd = `gfortran ${compilerOptions} ${filename}`;
+		const bash = `%%bash\n${compileCmd}\ntimeout 59s ./a.out`;
 
 		// Write file
 		const writeOutput = await executeCode(localStorage.token, writefile).catch((error) => {
@@ -474,6 +555,72 @@
 		await executeCode(localStorage.token, cleanupCmd).catch(() => {});
 
 		executing = false;
+	};
+
+	const executeJupyterScript = async (lang, code) => {
+		result = null;
+		stdout = null;
+		stderr = null;
+		executing = true;
+
+		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
+			toast.error('Jupyter engine is required for script execution.');
+			executing = false;
+			return;
+		}
+
+		if (!isCodeSafe(code, lang)) {
+			toast.error('Code contains potentially dangerous operations and was blocked.');
+			executing = false;
+			return;
+		}
+
+		const ext = lang === 'php' ? 'php' : lang === 'lua' ? 'lua' : 'txt';
+		const filename = `temp_${uuidv4()}.${ext}`;
+		const writefile = `%%writefile ${filename}\n${code}`;
+		let runCmd = '';
+		if (lang === 'php') runCmd = `php ${filename}`;
+		if (lang === 'lua') runCmd = `lua ${filename}`;
+		const bash = `%%bash\ntimeout 59s ${runCmd}`;
+
+		// Write file
+		const writeOutput = await executeCode(localStorage.token, writefile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!writeOutput) {
+			executing = false;
+			return;
+		}
+
+		// Run script (with timeout)
+		let timeoutId;
+		let timedOut = false;
+		const timeoutPromise = new Promise((_, reject) => {
+			timeoutId = setTimeout(() => {
+				timedOut = true;
+				reject(new Error('Execution Time Limit Exceeded'));
+			}, 60000);
+		});
+
+		try {
+			const output = await Promise.race([executeCode(localStorage.token, bash), timeoutPromise]);
+			if (timedOut) {
+				stderr = 'Execution Time Limit Exceeded';
+			} else if (output) {
+				if (output['stdout']) stdout = output['stdout'];
+				if (output['stderr']) stderr = output['stderr'];
+				if (output['result']) result = output['result'];
+			}
+		} catch (e) {
+			stderr = e.message || 'Execution failed';
+		} finally {
+			clearTimeout(timeoutId);
+			// Cleanup: delete the source file
+			const cleanupCmd = `%%bash\nrm -f ${filename}`;
+			await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+			executing = false;
+		}
 	};
 
 	let debounceTimeout;
@@ -601,7 +748,7 @@
 						</div>
 					</button>
 
-					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)) || lang.toLowerCase() === 'c' || lang.toLowerCase() === 'cpp' || lang.toLowerCase() === 'fortran' || (lang === '' && (checkCCode(code) || checkCppCode(code) || checkFortranCode(code))))}
+					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)) || lang.toLowerCase() === 'c' || lang.toLowerCase() === 'cpp' || lang.toLowerCase() === 'fortran' || (lang === '' && (checkCCode(code) || checkCppCode(code) || checkFortranCode(code))) || lang.toLowerCase() === 'lua' || (lang === '' && checkLuaCode(code)) || lang.toLowerCase() === 'php' || (lang === '' && checkPhpCode(code)))}
 						{#if executing}
 							<div class="run-code-button bg-none border-none p-1 cursor-not-allowed">
 								{$i18n.t('Running')}
@@ -632,6 +779,22 @@
 											else if (checkFortranCode(code)) detectedLang = 'fortran';
 										}
 										executeJupyterCompiled(detectedLang, code);
+									} else if (lang.toLowerCase() === 'lua' || (lang === '' && checkLuaCode(code))) {
+										if (!isCodeSafe(code, 'lua')) {
+											toast.error(
+												'Code contains potentially dangerous operations and was blocked.'
+											);
+											return;
+										}
+										executeJupyterScript('lua', code);
+									} else if (lang.toLowerCase() === 'php' || (lang === '' && checkPhpCode(code))) {
+										if (!isCodeSafe(code, 'php')) {
+											toast.error(
+												'Code contains potentially dangerous operations and was blocked.'
+											);
+											return;
+										}
+										executeJupyterScript('php', code);
 									}
 								}}
 							>
