@@ -482,10 +482,14 @@
 								<div class="text-red-500 p-4">{latexError}</div>
 							{:else if latexResults[selectedContentIdx]}
 								<iframe
+									title="Content"
 									src={latexResults[selectedContentIdx]}
-									width="100%"
-									height="600px"
-									style="border:1px solid #ccc; border-radius:8px; background:#fff;"
+									class="w-full border-0 h-full rounded-none"
+									sandbox="allow-scripts{($settings?.iframeSandboxAllowForms ?? false)
+										? ' allow-forms'
+										: ''}{($settings?.iframeSandboxAllowSameOrigin ?? false)
+										? ' allow-same-origin'
+										: ''}"
 								></iframe>
 							{:else}
 								<div class="flex items-center justify-center h-full">
