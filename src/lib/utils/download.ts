@@ -85,7 +85,7 @@ export function getExtension(lang: string | undefined): string {
 
 export function downloadCode(code: string, lang: string | undefined) {
     const ext = getExtension(lang);
-    const filename = lang?.toLowerCase() === 'dockerfile' ? 'Dockerfile' : `codeblock.${ext}`;
+    const filename = lang?.toLowerCase() === 'dockerfile' ? 'Dockerfile' : `artifact.${ext}`;
     const blob = new Blob([code], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

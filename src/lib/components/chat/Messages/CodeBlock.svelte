@@ -78,9 +78,13 @@
 		output = output.replace(/^Cell\s+In\[\d+\].*$/gm, '');
 		// Remove get_ipython/run_cell_magic lines
 		output = output.replace(/get_ipython\(.*run_cell_magic.*\);?/g, '');
-		// Remove empty lines at start/end
-		output = output.replace(/^[\s\r\n]+|[\s\r\n]+$/g, '');
-		output = output.replace(/^---->\s+[0-9]+\s+$/g, '');
+		// Remove arrow lines like ----> 1 or ----> 12
+		output = output.replace(/^\s*-+>\s*\d+\s*$/gm, '');
+		// Remove empty lines or lines with only whitespace (spaces/tabs)
+		output = output
+			.split('\n')
+			.filter((line) => line.trim().length > 0)
+			.join('\n');
 		return output;
 	}
 
