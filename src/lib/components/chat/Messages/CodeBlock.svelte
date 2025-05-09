@@ -331,7 +331,7 @@
 			/\bchgrp\s*\(/i
 		];
 		const latexRisky = [
-			/\\write(\d*)/i,
+			/\\write/i,
 			/\\write18/i,
 			/\\immediate/i,
 			/\\input/i,
@@ -382,7 +382,7 @@
 			if (lang.toLowerCase() === 'fortran') patterns = fortranRisky;
 			if (lang.toLowerCase() === 'lua') patterns = luaRisky;
 			if (lang.toLowerCase() === 'php') patterns = phpRisky;
-			if (lang.toLowerCase() === 'latex') patterns = latexRisky;
+			if (lang.toLowerCase() === 'latex' || lang.toLowerCase() === 'tex') patterns = latexRisky;
 		}
 		return !patterns.some((pat) => pat.test(code));
 	}
@@ -956,6 +956,12 @@
 										lang.toLowerCase() === 'latex' ||
 										(lang === '' && checkLatexCode(code))
 									) {
+										if (!isCodeSafe(code, 'latex')) {
+											toast.error(
+												'Code contains potentially dangerous operations and was blocked.'
+											);
+											return;
+										}
 										executeJupyterLatex(code);
 									}
 								}}
