@@ -206,6 +206,7 @@
 						if (!(latexArtifacts as string[]).includes(latexCode)) {
 							latexArtifacts.push(latexCode);
 							contents = [...contents, { type: 'latex', content: latexCode }];
+							foundLatex = true;
 						}
 					}
 				}
@@ -218,6 +219,12 @@
 		}
 
 		selectedContentIdx = contents ? contents.length - 1 : 0;
+
+		// Automatic Exhibition for LaTeX: open artifacts window if new LaTeX artifact detected
+		if (foundLatex) {
+			showArtifacts.set(true);
+			showControls.set(true);
+		}
 	};
 
 	// LaTeX PDF generation logic
