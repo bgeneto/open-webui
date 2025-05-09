@@ -331,18 +331,18 @@
 			/\bchgrp\s*\(/i
 		];
 		const latexRisky = [
-			/\\write/i,
+			/\\write\s*\d*/i,
 			/\\write18/i,
 			/\\immediate/i,
-			/\\input/i,
+			/\\input\s*(\{.*?\})?/i,
 			/\\@@input/i,
 			/\\openout/i,
 			/\\openin/i,
-			/\\read(\d*)/i,
+			/\\read\s*\d*/i,
 			/\\closeout/i,
 			/\\closein/i,
-			/\\usepackage\s*\{shellesc\}/i,
-			/\\usepackage\s*\{catchfile\}/i,
+			/\\usepackage\s*\{\s*shellesc\s*\}/i,
+			/\\usepackage\s*\{\s*catchfile\s*\}/i,
 			/\\catcode/i,
 			/\\newwrite/i,
 			/\\newread/i,
