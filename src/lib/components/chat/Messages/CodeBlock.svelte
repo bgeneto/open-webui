@@ -258,6 +258,11 @@
 		return phpSyntax.some((s) => str.includes(s));
 	};
 
+	const checkLatexCode = (str) => {
+		// Simple check for LaTeX document structure
+		return /\\documentclass\b/.test(str) || /\\begin\{document\}/.test(str);
+	};
+
 	function isCodeSafe(code, lang) {
 		const riskyPatterns = [
 			/\bsystem\s*\(/i,
@@ -660,6 +665,71 @@
 		}
 	};
 
+	const executeJupyterLatex = async (code) => {
+		result = null;
+		stdout = null;
+		stderr = null;
+		files = null;
+		executing = true;
+
+		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
+			toast.error('Jupyter engine is required for LaTeX execution.');
+			executing = false;
+			return;
+		}
+
+		const filename = `temp_${uuidv4()}.tex`;
+		const pdffile = filename.replace(/\.tex$/, '.pdf');
+		const writefile = `%%writefile ${filename}\n${code}`;
+		const compileCmd = `pdflatex -interaction=nonstopmode -halt-on-error ${filename}`;
+		const bashCompile = `%%bash\n${compileCmd}`;
+		const base64Cmd = `%%bash\nif [ -f ${pdffile} ]; then base64 ${pdffile}; fi`;
+		const cleanupCmd = `%%bash\nrm -f ${filename} ${filename.replace(/\.tex$/, '.aux')} ${filename.replace(/\.tex$/, '.log')} ${pdffile}`;
+
+		// Write .tex file
+		const writeOutput = await executeCode(localStorage.token, writefile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!writeOutput) {
+			executing = false;
+			return;
+		}
+
+		// Compile with pdflatex
+		const compileOutput = await executeCode(localStorage.token, bashCompile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!compileOutput || compileOutput.stderr) {
+			stderr = compileOutput?.stderr || 'LaTeX compilation failed.';
+			executing = false;
+			await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+			return;
+		}
+
+		// Read PDF as base64
+		const base64Output = await executeCode(localStorage.token, base64Cmd).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (base64Output && base64Output.stdout) {
+			files = [
+				{
+					type: 'application/pdf',
+					data: `data:application/pdf;base64,${base64Output.stdout.replace(/\s/g, '')}`
+				}
+			];
+			result = 'PDF generated below.';
+		} else {
+			stderr = 'PDF generation failed.';
+		}
+
+		// Cleanup
+		await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+		executing = false;
+	};
+
 	let debounceTimeout;
 
 	const drawMermaidDiagram = async () => {
@@ -785,7 +855,7 @@
 						</div>
 					</button>
 
-					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)) || lang.toLowerCase() === 'c' || lang.toLowerCase() === 'cpp' || lang.toLowerCase() === 'fortran' || (lang === '' && (checkCCode(code) || checkCppCode(code) || checkFortranCode(code))) || lang.toLowerCase() === 'lua' || (lang === '' && checkLuaCode(code)) || lang.toLowerCase() === 'php' || (lang === '' && checkPhpCode(code)))}
+					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)) || lang.toLowerCase() === 'c' || lang.toLowerCase() === 'cpp' || lang.toLowerCase() === 'fortran' || (lang === '' && (checkCCode(code) || checkCppCode(code) || checkFortranCode(code))) || lang.toLowerCase() === 'lua' || (lang === '' && checkLuaCode(code)) || lang.toLowerCase() === 'php' || (lang === '' && checkPhpCode(code)) || lang.toLowerCase() === 'latex' || (lang === '' && checkLatexCode(code)))}
 						{#if executing}
 							<div class="run-code-button bg-none border-none p-1 cursor-not-allowed">
 								{$i18n.t('Running')}
@@ -832,6 +902,11 @@
 											return;
 										}
 										executeJupyterScript('php', code);
+									} else if (
+										lang.toLowerCase() === 'latex' ||
+										(lang === '' && checkLatexCode(code))
+									) {
+										executeJupyterLatex(code);
 									}
 								}}
 							>
@@ -951,7 +1026,14 @@
 									{#if files}
 										<div class="flex flex-col gap-2">
 											{#each files as file}
-												{#if file.type.startsWith('image')}
+												{#if file.type === 'application/pdf'}
+													<iframe
+														src={file.data}
+														width="100%"
+														height="600px"
+														style="border:1px solid #ccc; border-radius:8px; background:#fff;"
+													></iframe>
+												{:else if file.type.startsWith('image')}
 													<img src={file.data} alt="Output" class=" w-full max-w-[36rem]" />
 												{/if}
 											{/each}
