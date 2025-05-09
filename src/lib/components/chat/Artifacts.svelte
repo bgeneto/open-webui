@@ -248,7 +248,9 @@
 			await executeCode(localStorage.token, writefile);
 			const compileOutput = await executeCode(localStorage.token, bashCompile);
 			if (!compileOutput || compileOutput.stderr) {
-				latexError = compileOutput?.stderr || 'LaTeX compilation failed.';
+				latexError =
+					(i18n as any)?.t?.('LaTeX document failed to compile.') ||
+					'LaTeX document failed to compile.';
 				await executeCode(localStorage.token, cleanupCmd).catch(() => {});
 				latexLoading = false;
 				return;
