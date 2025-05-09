@@ -129,39 +129,47 @@
 				let htmlContent = '';
 				let cssContent = '';
 				let jsContent = '';
+				let latexContent = '';
 
 				codeBlocks.forEach((block) => {
 					const { lang, code } = block;
-
 					if (lang === 'html') {
 						htmlContent += code + '\n';
 					} else if (lang === 'css') {
 						cssContent += code + '\n';
 					} else if (lang === 'javascript' || lang === 'js') {
 						jsContent += code + '\n';
+					} else if (lang === 'latex' || lang === 'tex') {
+						latexContent += code + '\n';
 					}
 				});
 
 				const inlineHtml = message.content.match(/<html>[\s\S]*?<\/html>/gi);
 				const inlineCss = message.content.match(/<style>[\s\S]*?<\/style>/gi);
 				const inlineJs = message.content.match(/<script>[\s\S]*?<\/script>/gi);
+				const inlineLatex = message.content.match(/\\documentclass[\s\S]*?\\end{document}/gi);
 
 				if (inlineHtml) {
 					(inlineHtml as string[]).forEach((block: string) => {
-						const content = block.replace(/<\/?html>/gi, ''); // Remove <html> tags
+						const content = block.replace(/<\/?html>/gi, '');
 						htmlContent += content + '\n';
 					});
 				}
 				if (inlineCss) {
 					(inlineCss as string[]).forEach((block: string) => {
-						const content = block.replace(/<\/?style>/gi, ''); // Remove <style> tags
+						const content = block.replace(/<\/?style>/gi, '');
 						cssContent += content + '\n';
 					});
 				}
 				if (inlineJs) {
 					(inlineJs as string[]).forEach((block: string) => {
-						const content = block.replace(/<\/?script>/gi, ''); // Remove <script> tags
+						const content = block.replace(/<\/?script>/gi, '');
 						jsContent += content + '\n';
+					});
+				}
+				if (inlineLatex) {
+					(inlineLatex as string[]).forEach((block: string) => {
+						latexContent += block + '\n';
 					});
 				}
 
@@ -173,16 +181,12 @@
                             <meta charset="UTF-8">
                             <meta name="viewport" content="width=device-width, initial-scale=1.0">
 							<${''}style>
-								body {
-									background-color: white; /* Ensure the iframe has a white background */
-								}
-
+								body { background-color: white; }
 								${cssContent}
 							</${''}style>
                         </head>
                         <body>
                             ${htmlContent}
-
 							<${''}script>
                             	${jsContent}
 							</${''}script>
@@ -199,9 +203,26 @@
 					}
 				}
 
-				// LaTeX artifact detection (only if Jupyter enabled)
+				// LaTeX artifact detection (robust, like HTML/JS)
 				if ((config as any)?.code?.engine === 'jupyter') {
-					const latexBlocks = extractLatex(message.content);
+					// Prefer code block LaTeX, but also allow inline if not already present
+					const latexBlocks: string[] = [];
+					if (latexContent.trim()) {
+						latexBlocks.push(
+							...latexContent
+								.trim()
+								.split(/(?=\\documentclass)/g)
+								.filter(Boolean)
+						);
+					}
+					// Add inline LaTeX only if not already present
+					if (inlineLatex) {
+						for (const block of inlineLatex) {
+							if (!latexBlocks.some((b) => b.trim() === block.trim())) {
+								latexBlocks.push(block);
+							}
+						}
+					}
 					for (const latexCode of latexBlocks) {
 						if (!(latexArtifacts as string[]).includes(latexCode)) {
 							latexArtifacts.push(latexCode);
@@ -220,7 +241,6 @@
 
 		selectedContentIdx = contents ? contents.length - 1 : 0;
 
-		// Automatic Exhibition for LaTeX: open artifacts window if new LaTeX artifact detected
 		if (foundLatex) {
 			showArtifacts.set(true);
 			showControls.set(true);
