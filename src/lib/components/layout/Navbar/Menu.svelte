@@ -1,34 +1,32 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
 	import { DropdownMenu } from 'bits-ui';
 	import { getContext } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
-	import jsPDF from 'jspdf';
 	import html2canvas from 'html2canvas-pro';
+	import jsPDF from 'jspdf';
 
-	import { downloadChatAsPDF } from '$lib/apis/utils';
 	import { copyToClipboard, createMessagesList } from '$lib/utils';
 
 	import {
-		showOverview,
-		showControls,
-		showArtifacts,
 		mobile,
-		temporaryChatEnabled,
-		theme
+		showArtifacts,
+		showControls,
+		showOverview,
+		temporaryChatEnabled
 	} from '$lib/stores';
 	import { flyAndScale } from '$lib/utils/transitions';
 
-	import Dropdown from '$lib/components/common/Dropdown.svelte';
-	import Tags from '$lib/components/chat/Tags.svelte';
-	import Map from '$lib/components/icons/Map.svelte';
-	import Clipboard from '$lib/components/icons/Clipboard.svelte';
-	import AdjustmentsHorizontal from '$lib/components/icons/AdjustmentsHorizontal.svelte';
-	import Cube from '$lib/components/icons/Cube.svelte';
 	import { getChatById } from '$lib/apis/chats';
+	import Tags from '$lib/components/chat/Tags.svelte';
+	import Dropdown from '$lib/components/common/Dropdown.svelte';
+	import AdjustmentsHorizontal from '$lib/components/icons/AdjustmentsHorizontal.svelte';
+	import Clipboard from '$lib/components/icons/Clipboard.svelte';
+	import Cube from '$lib/components/icons/Cube.svelte';
+	import Map from '$lib/components/icons/Map.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -148,6 +146,22 @@
 				type: 'application/json'
 			});
 			saveAs(blob, `chat-export-${Date.now()}.json`);
+		}
+	};
+
+	const downloadDocx = async () => {
+		if (!chat.id) return;
+		try {
+			const response = await fetch(`/api/v1/chats/${chat.id}/export_docx`, {
+				headers: {
+					Authorization: localStorage.token ? `Bearer ${localStorage.token}` : ''
+				}
+			});
+			if (!response.ok) throw new Error('Failed to download docx');
+			const blob = await response.blob();
+			saveAs(blob, `chat-${chat.chat.title}.docx`);
+		} catch (e) {
+			console.error('Error downloading docx', e);
 		}
 	};
 </script>
@@ -312,6 +326,15 @@
 						}}
 					>
 						<div class="flex items-center line-clamp-1">{$i18n.t('PDF document (.pdf)')}</div>
+					</DropdownMenu.Item>
+
+					<DropdownMenu.Item
+						class="flex gap-2 items-center px-3 py-2 text-sm  cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+						on:click={() => {
+							downloadDocx();
+						}}
+					>
+						<div class="flex items-center line-clamp-1">{$i18n.t('Word (.docx)')}</div>
 					</DropdownMenu.Item>
 				</DropdownMenu.SubContent>
 			</DropdownMenu.Sub>
