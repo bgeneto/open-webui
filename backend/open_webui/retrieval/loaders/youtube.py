@@ -74,6 +74,10 @@ class YoutubeLoader:
         if "en" not in self.language:
             self.language.append("en")
 
+        # Add Portuguese as fallback if not already in the list
+        if "pt" not in self.language:
+            self.language.append("pt")
+
     def load(self) -> List[Document]:
         """Load YouTube transcripts into `Document` objects."""
         try:
