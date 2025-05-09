@@ -90,19 +90,20 @@
 
 	// Helper: Detect LaTeX code blocks or inline LaTeX
 	function extractLatex(content: string) {
-		const blocks = [];
+		const blocks: string[] = [];
 		// Detect ```latex or ```tex code blocks
 		const codeBlockRegex = /```(?:latex|tex)\n([\s\S]*?)```/gi;
 		let match;
 		while ((match = codeBlockRegex.exec(content))) {
 			blocks.push(match[1]);
 		}
-		// Detect inline LaTeX: \documentclass or \begin{document} ... \end{document}
+		// Detect inline LaTeX: \\documentclass or \\begin{document} ... \\end{document}
 		const inlineLatexRegex = /(\\documentclass[\s\S]*?\\end{document})/gi;
 		while ((match = inlineLatexRegex.exec(content))) {
 			blocks.push(match[1]);
 		}
-		return blocks;
+		// Remove duplicates
+		return Array.from(new Set(blocks));
 	}
 
 	const getContents = async () => {
@@ -274,6 +275,7 @@
 		contents[selectedContentIdx]?.type === 'latex' &&
 		!latexResults[selectedContentIdx] &&
 		!latexLoading &&
+		!latexError &&
 		$config?.code?.engine === 'jupyter'
 	) {
 		generateLatexPdf(selectedContentIdx);
