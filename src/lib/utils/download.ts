@@ -1,6 +1,6 @@
 // Utility to map language names to file extensions for download
 export function getExtension(lang: string | undefined): string {
-    if (!lang) return 'md';
+    if (!lang) return '';
     const map: Record<string, string> = {
         abap: 'abap',
         apex: 'apex',
@@ -46,6 +46,7 @@ export function getExtension(lang: string | undefined): string {
         mak: 'mak', makefile: 'mak', mk: 'mak',
         markdown: 'md', md: 'md',
         matlab: 'm',
+        math: 'tex',
         ml: 'ml', ocaml: 'ml',
         nasm: 'asm',
         nim: 'nim',
@@ -73,6 +74,7 @@ export function getExtension(lang: string | undefined): string {
         svg: 'svg',
         swift: 'swift',
         tcl: 'tcl',
+        text: 'txt', txt: 'txt',
         ts: 'ts', typescript: 'ts',
         tsv: 'tsv',
         vb: 'vb', vba: 'vba', vbnet: 'vb',
@@ -80,7 +82,7 @@ export function getExtension(lang: string | undefined): string {
         yaml: 'yaml', yml: 'yml',
         zig: 'zig',
     };
-    return map[lang.toLowerCase()] || 'txt';
+    return map[lang.toLowerCase()] || '';
 }
 
 export function downloadCode(code: string, lang: string | undefined) {

@@ -4,7 +4,7 @@
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { copyToClipboard } from '$lib/utils';
-	import { downloadCode } from '$lib/utils/download';
+	import { downloadCode, getExtension } from '$lib/utils/download';
 	import { getContext, onDestroy, onMount, tick } from 'svelte';
 
 	import 'highlight.js/styles/github-dark.min.css';
@@ -64,6 +64,8 @@
 	let copied = false;
 	let saved = false;
 	let downloaded = false;
+
+	$: hasDownloadExtension = !!getExtension(lang);
 
 	// Utility: Clean up noisy Jupyter/traceback/ANSI output
 	function cleanOutput(output: string): string {
@@ -930,16 +932,18 @@
 						on:click={copyCode}>{copied ? $i18n.t('Copied') : $i18n.t('Copy')}</button
 					>
 
-					<button
-						class="download-code-button bg-none border-none bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-md px-1.5 py-0.5"
-						on:click={() => {
-							downloadCode(code, lang);
-							downloaded = true;
-							setTimeout(() => (downloaded = false), 1000);
-						}}
-					>
-						{downloaded ? $i18n.t('Downloaded') : '↓ ' + $i18n.t('Download')}
-					</button>
+					{#if hasDownloadExtension}
+						<button
+							class="download-code-button bg-none border-none bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-md px-1.5 py-0.5"
+							on:click={() => {
+								downloadCode(code, lang);
+								downloaded = true;
+								setTimeout(() => (downloaded = false), 1000);
+							}}
+						>
+							{downloaded ? $i18n.t('Downloaded') : '↓ ' + $i18n.t('Download')}
+						</button>
+					{/if}
 				</div>
 			</div>
 
