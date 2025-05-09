@@ -65,6 +65,24 @@
 	let saved = false;
 	let downloaded = false;
 
+	// Utility: Clean up noisy Jupyter/traceback/ANSI output
+	function cleanOutput(output: string): string {
+		if (!output) return '';
+		// Remove ANSI color codes
+		output = output.replace(/\u001b\[[0-9;]*m/g, '');
+		// Remove Jupyter cell magic lines
+		output = output.replace(/^%%.*$/gm, '');
+		// Remove IPython traceback headers/footers
+		output = output.replace(/-{5,}.*?-{5,}/gs, '');
+		// Remove 'Cell In[1]' and similar
+		output = output.replace(/^Cell\s+In\[\d+\].*$/gm, '');
+		// Remove get_ipython/run_cell_magic lines
+		output = output.replace(/get_ipython\(.*run_cell_magic.*\);?/g, '');
+		// Remove empty lines at start/end
+		output = output.replace(/^[\s\r\n]+|[\s\r\n]+$/g, '');
+		return output;
+	}
+
 	const collapseCodeBlock = () => {
 		collapsed = !collapsed;
 	};
@@ -506,6 +524,13 @@
 		stderr = null;
 		executing = true;
 
+		// check if compiled language is supported
+		if (!['c', 'cpp', 'fortran'].includes(lang)) {
+			toast.error('Currently only C, C++, and Fortran are supported for compiled execution.');
+			executing = false;
+			return;
+		}
+
 		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
 			toast.error('Jupyter engine is required for C/C++/Fortran execution.');
 			executing = false;
@@ -562,6 +587,13 @@
 		stdout = null;
 		stderr = null;
 		executing = true;
+
+		// check if script language is supported
+		if (!['php', 'lua'].includes(lang)) {
+			toast.error('Currently only PHP and Lua are supported for script execution.');
+			executing = false;
+			return;
+		}
 
 		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
 			toast.error('Jupyter engine is required for script execution.');
@@ -881,23 +913,35 @@
 								<div class="text-sm">Running...</div>
 							</div>
 						{:else}
-							{#if stdout || stderr}
+							{#if cleanOutput(stderr)}
 								<div class=" ">
 									<div class=" text-gray-500 text-xs mb-1">STDOUT/STDERR</div>
 									<div
-										class="text-sm {stdout?.split('\n')?.length > 100
+										class="text-sm {cleanOutput(stderr)?.split('\n')?.length > 100
 											? `max-h-96`
 											: ''}  overflow-y-auto"
 									>
-										{stdout || stderr}
+										{@html cleanOutput(stderr)}
+									</div>
+								</div>
+								{@html `<script>setTimeout(() => {window?.toast?.error?.('${cleanOutput(stderr).split('\\n')[0] || 'Error occurred'}')}, 0)</script>`}
+							{:else if cleanOutput(stdout)}
+								<div class=" ">
+									<div class=" text-gray-500 text-xs mb-1">STDOUT/STDERR</div>
+									<div
+										class="text-sm {cleanOutput(stdout)?.split('\n')?.length > 100
+											? `max-h-96`
+											: ''}  overflow-y-auto"
+									>
+										{@html cleanOutput(stdout)}
 									</div>
 								</div>
 							{/if}
-							{#if result || files}
+							{#if cleanOutput(result) || files}
 								<div class=" ">
 									<div class=" text-gray-500 text-xs mb-1">RESULT</div>
-									{#if result}
-										<div class="text-sm">{`${JSON.stringify(result)}`}</div>
+									{#if cleanOutput(result)}
+										<div class="text-sm">{cleanOutput(result)}</div>
 									{/if}
 									{#if files}
 										<div class="flex flex-col gap-2">
