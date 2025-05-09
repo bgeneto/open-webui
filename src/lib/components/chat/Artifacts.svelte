@@ -14,7 +14,7 @@
 
 	export let overlay = false;
 	export let history;
-	let messages = [];
+	let messages: any[] = [];
 
 	let contents: Array<{ type: string; content: string }> = [];
 	let selectedContentIdx = 0;
@@ -114,10 +114,10 @@
 		for (const message of messages) {
 			if (message?.role !== 'user' && message?.content) {
 				const codeBlockContents = message.content.match(/```[\s\S]*?```/g);
-				let codeBlocks = [];
+				let codeBlocks: { lang: string; code: string }[] = [];
 
 				if (codeBlockContents) {
-					codeBlockContents.forEach((block) => {
+					codeBlockContents.forEach((block: string) => {
 						const lang = block.split('\n')[0].replace('```', '').trim().toLowerCase();
 						const code = block.replace(/```[\s\S]*?\n/, '').replace(/```$/, '');
 						codeBlocks.push({ lang, code });
@@ -128,7 +128,7 @@
 				let cssContent = '';
 				let jsContent = '';
 
-				codeBlocks.forEach((block) => {
+				codeBlocks.forEach((block: { lang: string; code: string }) => {
 					const { lang, code } = block;
 
 					if (lang === 'html') {
@@ -137,6 +137,9 @@
 						cssContent += code + '\n';
 					} else if (lang === 'javascript' || lang === 'js') {
 						jsContent += code + '\n';
+					} else if (lang === 'latex' || lang === 'tex') {
+						// Skip LaTeX/tex blocks here; they will be handled by the LaTeX artifact detection below
+						return;
 					}
 				});
 
@@ -145,19 +148,19 @@
 				const inlineJs = message.content.match(/<script>[\s\S]*?<\/script>/gi);
 
 				if (inlineHtml) {
-					inlineHtml.forEach((block) => {
+					inlineHtml.forEach((block: string) => {
 						const content = block.replace(/<\/?html>/gi, ''); // Remove <html> tags
 						htmlContent += content + '\n';
 					});
 				}
 				if (inlineCss) {
-					inlineCss.forEach((block) => {
+					inlineCss.forEach((block: string) => {
 						const content = block.replace(/<\/?style>/gi, ''); // Remove <style> tags
 						cssContent += content + '\n';
 					});
 				}
 				if (inlineJs) {
-					inlineJs.forEach((block) => {
+					inlineJs.forEach((block: string) => {
 						const content = block.replace(/<\/?script>/gi, ''); // Remove <script> tags
 						jsContent += content + '\n';
 					});
@@ -256,7 +259,11 @@
 				latexError = 'PDF generation failed';
 			}
 		} catch (e) {
-			latexError = e.message || 'LaTeX execution failed';
+			if (e instanceof Error) {
+				latexError = e.message || 'LaTeX execution failed';
+			} else {
+				latexError = 'LaTeX execution failed';
+			}
 		} finally {
 			latexLoading = false;
 		}
