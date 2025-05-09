@@ -80,6 +80,7 @@
 		output = output.replace(/get_ipython\(.*run_cell_magic.*\);?/g, '');
 		// Remove empty lines at start/end
 		output = output.replace(/^[\s\r\n]+|[\s\r\n]+$/g, '');
+		output = output.replace(/^---->\s+[0-9]+\s+$/g, '');
 		return output;
 	}
 
@@ -925,23 +926,23 @@
 									</div>
 								</div>
 								{@html `<script>setTimeout(() => {window?.toast?.error?.('${cleanOutput(stderr).split('\\n')[0] || 'Error occurred'}')}, 0)</script>`}
-							{:else if cleanOutput(stdout)}
+							{:else if stdout}
 								<div class=" ">
 									<div class=" text-gray-500 text-xs mb-1">STDOUT/STDERR</div>
 									<div
-										class="text-sm {cleanOutput(stdout)?.split('\n')?.length > 100
+										class="text-sm {stdout?.split('\n')?.length > 100
 											? `max-h-96`
 											: ''}  overflow-y-auto"
 									>
-										{@html cleanOutput(stdout)}
+										{@html stdout}
 									</div>
 								</div>
 							{/if}
-							{#if cleanOutput(result) || files}
+							{#if result || files}
 								<div class=" ">
 									<div class=" text-gray-500 text-xs mb-1">RESULT</div>
-									{#if cleanOutput(result)}
-										<div class="text-sm">{cleanOutput(result)}</div>
+									{#if result}
+										<div class="text-sm">{result}</div>
 									{/if}
 									{#if files}
 										<div class="flex flex-col gap-2">
