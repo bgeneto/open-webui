@@ -22,7 +22,7 @@
 	let copied = false;
 	let iframeElement: HTMLIFrameElement;
 
-	let latexArtifacts = [];
+	let latexArtifacts: string[] = [];
 	let latexResults: Record<number, string> = {};
 	let latexLoading = false;
 	let latexError = '';
@@ -88,19 +88,21 @@
 		getContents();
 	}
 
-	// Helper: Detect LaTeX code blocks or inline LaTeX
+	// Helper: Detect LaTeX code blocks or inline LaTeX (fallback)
 	function extractLatex(content: string) {
-		const blocks = [];
+		const blocks: string[] = [];
 		// Detect ```latex or ```tex code blocks
 		const codeBlockRegex = /```(?:latex|tex)\n([\s\S]*?)```/gi;
 		let match;
 		while ((match = codeBlockRegex.exec(content))) {
 			blocks.push(match[1]);
 		}
-		// Detect inline LaTeX: \documentclass or \begin{document} ... \end{document}
-		const inlineLatexRegex = /(\\documentclass[\s\S]*?\\end{document})/gi;
-		while ((match = inlineLatexRegex.exec(content))) {
-			blocks.push(match[1]);
+		// Fallback: only if no code block found, detect inline LaTeX: \documentclass ... \end{document}
+		if (blocks.length === 0) {
+			const inlineLatexRegex = /(\\documentclass[\s\S]*?\\end{document})/gi;
+			while ((match = inlineLatexRegex.exec(content))) {
+				blocks.push(match[1]);
+			}
 		}
 		return blocks;
 	}
@@ -111,13 +113,13 @@
 		latexResults = {};
 		latexError = '';
 		let foundLatex = false;
-		for (const message of messages) {
+		for (const message of messages as any[]) {
 			if (message?.role !== 'user' && message?.content) {
 				const codeBlockContents = message.content.match(/```[\s\S]*?```/g);
-				let codeBlocks = [];
+				let codeBlocks: { lang: string; code: string }[] = [];
 
 				if (codeBlockContents) {
-					codeBlockContents.forEach((block) => {
+					(codeBlockContents as string[]).forEach((block: string) => {
 						const lang = block.split('\n')[0].replace('```', '').trim().toLowerCase();
 						const code = block.replace(/```[\s\S]*?\n/, '').replace(/```$/, '');
 						codeBlocks.push({ lang, code });
@@ -145,19 +147,19 @@
 				const inlineJs = message.content.match(/<script>[\s\S]*?<\/script>/gi);
 
 				if (inlineHtml) {
-					inlineHtml.forEach((block) => {
+					(inlineHtml as string[]).forEach((block: string) => {
 						const content = block.replace(/<\/?html>/gi, ''); // Remove <html> tags
 						htmlContent += content + '\n';
 					});
 				}
 				if (inlineCss) {
-					inlineCss.forEach((block) => {
+					(inlineCss as string[]).forEach((block: string) => {
 						const content = block.replace(/<\/?style>/gi, ''); // Remove <style> tags
 						cssContent += content + '\n';
 					});
 				}
 				if (inlineJs) {
-					inlineJs.forEach((block) => {
+					(inlineJs as string[]).forEach((block: string) => {
 						const content = block.replace(/<\/?script>/gi, ''); // Remove <script> tags
 						jsContent += content + '\n';
 					});
@@ -198,11 +200,10 @@
 				}
 
 				// LaTeX artifact detection (only if Jupyter enabled)
-				if ($config?.code?.engine === 'jupyter') {
+				if ((config as any)?.code?.engine === 'jupyter') {
 					const latexBlocks = extractLatex(message.content);
-					if (latexBlocks.length > 0) {
-						foundLatex = true;
-						for (const latexCode of latexBlocks) {
+					for (const latexCode of latexBlocks) {
+						if (!(latexArtifacts as string[]).includes(latexCode)) {
 							latexArtifacts.push(latexCode);
 							contents = [...contents, { type: 'latex', content: latexCode }];
 						}
@@ -255,7 +256,7 @@
 			} else {
 				latexError = 'PDF generation failed';
 			}
-		} catch (e) {
+		} catch (e: any) {
 			latexError = e.message || 'LaTeX execution failed';
 		} finally {
 			latexLoading = false;
@@ -267,7 +268,7 @@
 		contents[selectedContentIdx]?.type === 'latex' &&
 		!latexResults[selectedContentIdx] &&
 		!latexLoading &&
-		$config?.code?.engine === 'jupyter'
+		(config as any)?.code?.engine === 'jupyter'
 	) {
 		generateLatexPdf(selectedContentIdx);
 	}
@@ -284,42 +285,44 @@
 	}
 
 	const iframeLoadHandler = () => {
-		iframeElement.contentWindow.addEventListener(
-			'click',
-			function (e) {
-				const target = e.target.closest('a');
-				if (target && target.href) {
-					e.preventDefault();
-					const url = new URL(target.href, iframeElement.baseURI);
-					if (url.origin === window.location.origin) {
-						iframeElement.contentWindow.history.pushState(
-							null,
-							'',
-							url.pathname + url.search + url.hash
-						);
-					} else {
-						console.log('External navigation blocked:', url.href);
+		if (iframeElement?.contentWindow) {
+			iframeElement.contentWindow.addEventListener(
+				'click',
+				function (e) {
+					const target = (e.target as HTMLElement)?.closest('a');
+					if (target && (target as HTMLAnchorElement).href) {
+						e.preventDefault();
+						const url = new URL((target as HTMLAnchorElement).href, iframeElement.baseURI);
+						if (url.origin === window.location.origin) {
+							iframeElement.contentWindow.history.pushState(
+								null,
+								'',
+								url.pathname + url.search + url.hash
+							);
+						} else {
+							console.log('External navigation blocked:', url.href);
+						}
 					}
-				}
-			},
-			true
-		);
+				},
+				true
+			);
 
-		// Cancel drag when hovering over iframe
-		iframeElement.contentWindow.addEventListener('mouseenter', function (e) {
-			e.preventDefault();
-			iframeElement.contentWindow.addEventListener('dragstart', (event) => {
-				event.preventDefault();
+			// Cancel drag when hovering over iframe
+			iframeElement.contentWindow.addEventListener('mouseenter', function (e) {
+				e.preventDefault();
+				iframeElement.contentWindow.addEventListener('dragstart', (event) => {
+					event.preventDefault();
+				});
 			});
-		});
+		}
 	};
 
 	const showFullScreen = () => {
-		if (iframeElement.requestFullscreen) {
+		if (iframeElement?.requestFullscreen) {
 			iframeElement.requestFullscreen();
-		} else if (iframeElement.webkitRequestFullscreen) {
+		} else if (iframeElement?.webkitRequestFullscreen) {
 			iframeElement.webkitRequestFullscreen();
-		} else if (iframeElement.msRequestFullscreen) {
+		} else if (iframeElement?.msRequestFullscreen) {
 			iframeElement.msRequestFullscreen();
 		}
 	};
