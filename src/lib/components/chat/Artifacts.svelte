@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
-	import { onMount, getContext, createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, getContext, onMount } from 'svelte';
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
-	import { chatId, settings, showArtifacts, showControls } from '$lib/stores';
-	import XMark from '../icons/XMark.svelte';
+	import { executeCode } from '$lib/apis/utils';
+	import { config, settings, showArtifacts, showControls } from '$lib/stores';
 	import { copyToClipboard, createMessagesList } from '$lib/utils';
-	import ArrowsPointingOut from '../icons/ArrowsPointingOut.svelte';
-	import Tooltip from '../common/Tooltip.svelte';
 	import SvgPanZoom from '../common/SVGPanZoom.svelte';
+	import Tooltip from '../common/Tooltip.svelte';
 	import ArrowLeft from '../icons/ArrowLeft.svelte';
+	import ArrowsPointingOut from '../icons/ArrowsPointingOut.svelte';
+	import XMark from '../icons/XMark.svelte';
 
 	export let overlay = false;
 	export let history;
@@ -22,6 +22,64 @@
 	let copied = false;
 	let iframeElement: HTMLIFrameElement;
 
+	let latexArtifacts = [];
+	let latexResults: Record<number, string> = {};
+	let latexLoading = false;
+	let latexError = '';
+
+	// LaTeX risky patterns (copied from CodeBlock.svelte)
+	const latexRisky: RegExp[] = [
+		/\\write\s*\d*/i,
+		/\\write18/i,
+		/\\immediate/i,
+		/\\input\s*(\{.*?\})?/i,
+		/\\@@input/i,
+		/\\openout/i,
+		/\\openin/i,
+		/\\read\s*\d*/i,
+		/\\closeout/i,
+		/\\closein/i,
+		/\\usepackage\s*\{\s*shellesc\s*\}/i,
+		/\\usepackage\s*\{\s*catchfile\s*\}/i,
+		/\\catcode/i,
+		/\\newwrite/i,
+		/\\newread/i,
+		/\\loop/i,
+		/\\everyeof/i,
+		/\\everypar/i,
+		/\\everymath/i,
+		/\\everydisplay/i,
+		/\\everycr/i,
+		/\\everyjob/i,
+		/\\everyhbox/i,
+		/\\everyvbox/i,
+		/\\everygroup/i,
+		/\\everyline/i,
+		/\\everyrow/i,
+		/\\everysection/i,
+		/\\everychapter/i,
+		/\\everypage/i,
+		/\\everyfootnote/i,
+		/\\special/i,
+		/\\jobname/i,
+		/\\message/i,
+		/\\errmessage/i,
+		/\\batchmode/i,
+		/\\scrollmode/i,
+		/\\nonstopmode/i,
+		/\\errorstopmode/i,
+		/\\chardef/i,
+		/\\advance/i,
+		/\\multiply/i,
+		/\\divide/i,
+		/\\endinput/i,
+		/\\dump/i
+	];
+
+	function isLatexSafe(code: string): boolean {
+		return !latexRisky.some((pat) => pat.test(code));
+	}
+
 	$: if (history) {
 		messages = createMessagesList(history, history.currentId);
 		getContents();
@@ -30,9 +88,30 @@
 		getContents();
 	}
 
-	const getContents = () => {
+	// Helper: Detect LaTeX code blocks or inline LaTeX
+	function extractLatex(content: string) {
+		const blocks = [];
+		// Detect ```latex or ```tex code blocks
+		const codeBlockRegex = /```(?:latex|tex)\n([\s\S]*?)```/gi;
+		let match;
+		while ((match = codeBlockRegex.exec(content))) {
+			blocks.push(match[1]);
+		}
+		// Detect inline LaTeX: \documentclass or \begin{document} ... \end{document}
+		const inlineLatexRegex = /(\\documentclass[\s\S]*?\\end{document})/gi;
+		while ((match = inlineLatexRegex.exec(content))) {
+			blocks.push(match[1]);
+		}
+		return blocks;
+	}
+
+	const getContents = async () => {
 		contents = [];
-		messages.forEach((message) => {
+		latexArtifacts = [];
+		latexResults = {};
+		latexError = '';
+		let foundLatex = false;
+		for (const message of messages) {
 			if (message?.role !== 'user' && message?.content) {
 				const codeBlockContents = message.content.match(/```[\s\S]*?```/g);
 				let codeBlocks = [];
@@ -117,8 +196,20 @@
 						}
 					}
 				}
+
+				// LaTeX artifact detection (only if Jupyter enabled)
+				if ($config?.code?.engine === 'jupyter') {
+					const latexBlocks = extractLatex(message.content);
+					if (latexBlocks.length > 0) {
+						foundLatex = true;
+						for (const latexCode of latexBlocks) {
+							latexArtifacts.push(latexCode);
+							contents = [...contents, { type: 'latex', content: latexCode }];
+						}
+					}
+				}
 			}
-		});
+		}
 
 		if (contents.length === 0) {
 			showControls.set(false);
@@ -127,6 +218,59 @@
 
 		selectedContentIdx = contents ? contents.length - 1 : 0;
 	};
+
+	// LaTeX PDF generation logic
+	async function generateLatexPdf(idx: number) {
+		latexLoading = true;
+		latexError = '';
+		const code = contents[idx].content;
+		if (!isLatexSafe(code)) {
+			latexError =
+				(i18n as any)?.t?.(
+					'Code contains potentially dangerous LaTeX operations and was blocked.'
+				) || 'Code contains potentially dangerous LaTeX operations and was blocked.';
+			latexLoading = false;
+			return;
+		}
+		const filename = `temp_${Date.now()}.tex`;
+		const pdffile = filename.replace(/\.tex$/, '.pdf');
+		const writefile = `%%writefile ${filename}\n${code}`;
+		const compileCmd = `timeout 30s pdflatex -interaction=nonstopmode -halt-on-error -no-shell-escape ${filename}`;
+		const bashCompile = `%%bash\n${compileCmd}`;
+		const base64Cmd = `%%bash\nif [ -f ${pdffile} ]; then base64 ${pdffile}; fi`;
+		const cleanupCmd = `%%bash\nrm -f ${filename} ${filename.replace(/\.tex$/, '.aux')} ${filename.replace(/\.tex$/, '.log')} ${pdffile}`;
+		try {
+			await executeCode(localStorage.token, writefile);
+			const compileOutput = await executeCode(localStorage.token, bashCompile);
+			if (!compileOutput || compileOutput.stderr) {
+				latexError = compileOutput?.stderr || 'LaTeX compilation failed.';
+				await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+				latexLoading = false;
+				return;
+			}
+			const base64Output = await executeCode(localStorage.token, base64Cmd);
+			await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+			if (base64Output && base64Output.stdout) {
+				latexResults[idx] = `data:application/pdf;base64,${base64Output.stdout.replace(/\s/g, '')}`;
+			} else {
+				latexError = 'PDF generation failed';
+			}
+		} catch (e) {
+			latexError = e.message || 'LaTeX execution failed';
+		} finally {
+			latexLoading = false;
+		}
+	}
+
+	// Watch for LaTeX artifact selection and auto-generate PDF
+	$: if (
+		contents[selectedContentIdx]?.type === 'latex' &&
+		!latexResults[selectedContentIdx] &&
+		!latexLoading &&
+		$config?.code?.engine === 'jupyter'
+	) {
+		generateLatexPdf(selectedContentIdx);
+	}
 
 	function navigateContent(direction: 'prev' | 'next') {
 		console.log(selectedContentIdx);
@@ -317,11 +461,30 @@
 								className=" w-full h-full max-h-full overflow-hidden"
 								svg={contents[selectedContentIdx].content}
 							/>
+						{:else if contents[selectedContentIdx].type === 'latex'}
+							{#if latexLoading}
+								<div class="flex items-center justify-center h-full">
+									{$i18n.t('Generating PDF...')}
+								</div>
+							{:else if latexError}
+								<div class="text-red-500 p-4">{latexError}</div>
+							{:else if latexResults[selectedContentIdx]}
+								<iframe
+									src={latexResults[selectedContentIdx]}
+									width="100%"
+									height="600px"
+									style="border:1px solid #ccc; border-radius:8px; background:#fff;"
+								></iframe>
+							{:else}
+								<div class="flex items-center justify-center h-full">
+									{$i18n.t('Waiting for PDF...')}
+								</div>
+							{/if}
 						{/if}
 					</div>
 				{:else}
 					<div class="m-auto font-medium text-xs text-gray-900 dark:text-white">
-						{$i18n.t('No HTML, CSS, or JavaScript content found.')}
+						{$i18n.t('No HTML, CSS, JavaScript, or LaTeX content found.')}
 					</div>
 				{/if}
 			</div>
