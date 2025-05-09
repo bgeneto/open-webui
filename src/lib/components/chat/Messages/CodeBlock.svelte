@@ -3,20 +3,20 @@
 
 	import { v4 as uuidv4 } from 'uuid';
 
-	import { getContext, onMount, tick, onDestroy } from 'svelte';
 	import { copyToClipboard } from '$lib/utils';
+	import { downloadCode, getExtension } from '$lib/utils/download';
+	import { getContext, onDestroy, onMount, tick } from 'svelte';
 
 	import 'highlight.js/styles/github-dark.min.css';
 
-	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
+	import { executeCode } from '$lib/apis/utils';
 	import CodeEditor from '$lib/components/common/CodeEditor.svelte';
 	import SvgPanZoom from '$lib/components/common/SVGPanZoom.svelte';
-	import { config } from '$lib/stores';
-	import { executeCode } from '$lib/apis/utils';
-	import { toast } from 'svelte-sonner';
-	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronUpDown from '$lib/components/icons/ChevronUpDown.svelte';
 	import CommandLine from '$lib/components/icons/CommandLine.svelte';
+	import { config } from '$lib/stores';
+	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
+	import { toast } from 'svelte-sonner';
 
 	const i18n = getContext('i18n');
 
@@ -63,6 +63,32 @@
 
 	let copied = false;
 	let saved = false;
+	let downloaded = false;
+
+	$: hasDownloadExtension = !!getExtension(lang);
+
+	// Utility: Clean up noisy Jupyter/traceback/ANSI output
+	function cleanOutput(output: string): string {
+		if (!output) return '';
+		// Remove ANSI color codes
+		output = output.replace(/\u001b\[[0-9;]*m/g, '');
+		// Remove Jupyter cell magic lines
+		output = output.replace(/^%%.*$/gm, '');
+		// Remove IPython traceback headers/footers
+		output = output.replace(/-{5,}.*?-{5,}/gs, '');
+		// Remove 'Cell In[1]' and similar
+		output = output.replace(/^Cell\s+In\[\d+\].*$/gm, '');
+		// Remove get_ipython/run_cell_magic lines
+		output = output.replace(/get_ipython\(.*run_cell_magic.*\);?/g, '');
+		// Remove arrow lines like ----> 1 or ----> 12
+		output = output.replace(/^\s*-+>\s*\d+\s*$/gm, '');
+		// Remove empty lines or lines with only whitespace (spaces/tabs)
+		output = output
+			.split('\n')
+			.filter((line) => line.trim().length > 0)
+			.join('\n');
+		return output;
+	}
 
 	const collapseCodeBlock = () => {
 		collapsed = !collapsed;
@@ -122,6 +148,244 @@
 		// If none of the above conditions met, it's probably not Python code
 		return false;
 	};
+
+	const checkCppCode = (str) => {
+		// C++-exclusive keywords and headers
+		const cppSyntax = [
+			'std::',
+			'cout',
+			'cin',
+			'class ',
+			'template',
+			'namespace ',
+			'new ',
+			'delete ',
+			'public:',
+			'private:',
+			'protected:',
+			'using namespace std',
+			'operator',
+			'friend',
+			'virtual',
+			'override',
+			'nullptr',
+			'#include <iostream>',
+			'#include <vector>',
+			'#include <string>'
+		];
+		return cppSyntax.some((s) => str.includes(s));
+	};
+
+	const checkCCode = (str) => {
+		// C-specific keywords/headers, but not C++-exclusive
+		if (checkCppCode(str)) return false;
+		const cSyntax = [
+			'#include <stdio.h>',
+			'#include <stdlib.h>',
+			'#include <string.h>',
+			'printf',
+			'scanf',
+			'malloc',
+			'free',
+			'NULL',
+			'size_t',
+			'struct ',
+			'typedef '
+		];
+		return cSyntax.some((s) => str.includes(s));
+	};
+
+	const checkFortranCode = (str) => {
+		const fortranSyntax = [
+			'program ',
+			'end program',
+			'implicit none',
+			'real',
+			'integer',
+			'write',
+			'print *',
+			'subroutine ',
+			'function ',
+			'module ',
+			'end module',
+			'contains',
+			'allocate'
+		];
+		return fortranSyntax.some((s) => str.toLowerCase().includes(s));
+	};
+
+	const checkLuaCode = (str) => {
+		const luaSyntax = [
+			'function ',
+			'local ',
+			'end',
+			'then',
+			'elseif',
+			'repeat',
+			'until',
+			'require',
+			'pairs',
+			'ipairs',
+			'print(',
+			'--',
+			'nil',
+			'table.',
+			'math.',
+			'os.',
+			'io.'
+		];
+		return luaSyntax.some((s) => str.includes(s));
+	};
+
+	const checkPhpCode = (str) => {
+		const phpSyntax = [
+			'<?php',
+			'echo ',
+			'$',
+			'->',
+			'::',
+			'function ',
+			'public ',
+			'private ',
+			'protected ',
+			'use ',
+			'namespace ',
+			'require_once',
+			'include_once',
+			'array(',
+			'null',
+			'true',
+			'false'
+		];
+		return phpSyntax.some((s) => str.includes(s));
+	};
+
+	const checkLatexCode = (str) => {
+		// Simple check for LaTeX document structure
+		return /\\documentclass\b/.test(str) || /\\begin\{document\}/.test(str);
+	};
+
+	function isCodeSafe(code, lang) {
+		const riskyPatterns = [
+			/\bsystem\s*\(/i,
+			/\bpopen\s*\(/i,
+			/\bexec/i,
+			/\bfork\s*\(/i,
+			/\bspawn/i,
+			/\bCreateProcess/i,
+			/\bWinExec/i,
+			/\bShellExecute/i,
+			/\bdlopen\s*\(/i,
+			/\bLoadLibrary/i,
+			/\bSetWindowsHook/i,
+			/\bptrace/i,
+			/\bkill\s*\(/i,
+			/\bsignal\s*\(/i,
+			/\batexit\s*\(/i,
+			/\bexit\s*\(/i,
+			/\babort\s*\(/i,
+			/\bremove\s*\(/i,
+			/\bunlink\s*\(/i,
+			/\brename\s*\(/i,
+			/#include\s*<windows\.h>/i,
+			/#include\s*<unistd\.h>/i,
+			/#include\s*<dlfcn\.h>/i,
+			/#include\s*<sys\/types\.h>/i,
+			/#include\s*<sys\/wait\.h>/i,
+			/#include\s*<sys\/ptrace\.h>/i,
+			/#include\s*<process\.h>/i
+		];
+		const fortranRisky = [
+			/\bcall\s+system\b/i,
+			/\bexecute_command_line\b/i,
+			/\binquire\b/i,
+			/\bflush\b/i,
+			/\bget_environment_variable\b/i
+		];
+		const luaRisky = [
+			/require\s*\(/i,
+			/os\.execute/i,
+			/io\.popen/i,
+			/os\.remove/i,
+			/os\.rename/i,
+			/os\.exit/i,
+			/os\.setlocale/i,
+			/os\.getenv/i,
+			/os\.tmpname/i
+		];
+		const phpRisky = [
+			/\bsystem\s*\(/i,
+			/\bexec\s*\(/i,
+			/\bpopen\s*\(/i,
+			/\bshell_exec\s*\(/i,
+			/\bpassthru\s*\(/i,
+			/\bproc_open\s*\(/i,
+			/\bpcntl_exec\s*\(/i,
+			/\bpcntl_fork\s*\(/i,
+			/\bdelete\s*\(/i,
+			/\bunlink\s*\(/i,
+			/\bmove_uploaded_file\s*\(/i,
+			/\bcopy\s*\(/i,
+			/\bchmod\s*\(/i,
+			/\bchown\s*\(/i,
+			/\bchgrp\s*\(/i
+		];
+		const latexRisky = [
+			/\\write\s*\d*/i,
+			/\\write18/i,
+			/\\immediate/i,
+			/\\input\s*(\{.*?\})?/i,
+			/\\@@input/i,
+			/\\openout/i,
+			/\\openin/i,
+			/\\read\s*\d*/i,
+			/\\closeout/i,
+			/\\closein/i,
+			/\\usepackage\s*\{\s*shellesc\s*\}/i,
+			/\\usepackage\s*\{\s*catchfile\s*\}/i,
+			/\\catcode/i,
+			/\\newwrite/i,
+			/\\newread/i,
+			/\\loop/i,
+			/\\everyeof/i,
+			/\\everypar/i,
+			/\\everymath/i,
+			/\\everydisplay/i,
+			/\\everycr/i,
+			/\\everyjob/i,
+			/\\everyhbox/i,
+			/\\everyvbox/i,
+			/\\everygroup/i,
+			/\\everyline/i,
+			/\\everyrow/i,
+			/\\everysection/i,
+			/\\everychapter/i,
+			/\\everypage/i,
+			/\\everyfootnote/i,
+			/\\special/i,
+			/\\jobname/i,
+			/\\message/i,
+			/\\errmessage/i,
+			/\\batchmode/i,
+			/\\scrollmode/i,
+			/\\nonstopmode/i,
+			/\\errorstopmode/i,
+			/\\chardef/i,
+			/\\advance/i,
+			/\\multiply/i,
+			/\\divide/i,
+			/\\endinput/i,
+			/\\dump/i
+		];
+		let patterns = riskyPatterns;
+		if (['fortran', 'lua', 'php', 'latex'].includes(lang?.toLowerCase?.())) {
+			if (lang.toLowerCase() === 'fortran') patterns = fortranRisky;
+			if (lang.toLowerCase() === 'lua') patterns = luaRisky;
+			if (lang.toLowerCase() === 'php') patterns = phpRisky;
+			if (lang.toLowerCase() === 'latex' || lang.toLowerCase() === 'tex') patterns = latexRisky;
+		}
+		return !patterns.some((pat) => pat.test(code));
+	}
 
 	const executePython = async (code) => {
 		result = null;
@@ -314,6 +578,208 @@
 		};
 	};
 
+	const executeJupyterCompiled = async (lang, code) => {
+		result = null;
+		stdout = null;
+		stderr = null;
+		executing = true;
+
+		// check if compiled language is supported
+		if (!['c', 'cpp', 'fortran'].includes(lang)) {
+			toast.error('Currently only C, C++, and Fortran are supported for compiled execution.');
+			executing = false;
+			return;
+		}
+
+		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
+			toast.error('Jupyter engine is required for C/C++/Fortran execution.');
+			executing = false;
+			return;
+		}
+
+		if (!isCodeSafe(code, lang)) {
+			toast.error('Code contains potentially dangerous operations and was blocked.');
+			executing = false;
+			return;
+		}
+
+		const ext = lang === 'c' ? 'c' : lang === 'cpp' ? 'cpp' : 'f90';
+		const filename = `temp_${uuidv4()}.${ext}`;
+		const writefile = `%%writefile ${filename}\n${code}`;
+		let compileCmd = '';
+		let compilerOptions = '-O2 -lm -fopenmp';
+		if (lang === 'c') compileCmd = `gcc ${compilerOptions} ${filename}`;
+		if (lang === 'cpp') compileCmd = `g++ ${compilerOptions} ${filename}`;
+		if (lang === 'fortran') compileCmd = `gfortran ${compilerOptions} ${filename}`;
+		const bash = `%%bash\n${compileCmd}\ntimeout 59s ./a.out`;
+
+		// Write file
+		const writeOutput = await executeCode(localStorage.token, writefile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!writeOutput) {
+			executing = false;
+			return;
+		}
+
+		// Compile and run
+		const output = await executeCode(localStorage.token, bash).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (output) {
+			if (output['stdout']) stdout = output['stdout'];
+			if (output['stderr']) stderr = output['stderr'];
+			if (output['result']) result = output['result'];
+		}
+
+		// Cleanup: delete the source file and a.out
+		const cleanupCmd = `%%bash\nrm -f ${filename} a.out`;
+		await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+
+		executing = false;
+	};
+
+	const executeJupyterScript = async (lang, code) => {
+		result = null;
+		stdout = null;
+		stderr = null;
+		executing = true;
+
+		// check if script language is supported
+		if (!['php', 'lua'].includes(lang)) {
+			toast.error('Currently only PHP and Lua are supported for script execution.');
+			executing = false;
+			return;
+		}
+
+		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
+			toast.error('Jupyter engine is required for script execution.');
+			executing = false;
+			return;
+		}
+
+		if (!isCodeSafe(code, lang)) {
+			toast.error('Code contains potentially dangerous operations and was blocked.');
+			executing = false;
+			return;
+		}
+
+		const ext = lang === 'php' ? 'php' : lang === 'lua' ? 'lua' : 'txt';
+		const filename = `temp_${uuidv4()}.${ext}`;
+		const writefile = `%%writefile ${filename}\n${code}`;
+		let runCmd = '';
+		if (lang === 'php') runCmd = `php ${filename}`;
+		if (lang === 'lua') runCmd = `lua ${filename}`;
+		const bash = `%%bash\ntimeout 59s ${runCmd}`;
+
+		// Write file
+		const writeOutput = await executeCode(localStorage.token, writefile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!writeOutput) {
+			executing = false;
+			return;
+		}
+
+		// Run script (with timeout)
+		let timeoutId;
+		let timedOut = false;
+		const timeoutPromise = new Promise((_, reject) => {
+			timeoutId = setTimeout(() => {
+				timedOut = true;
+				reject(new Error('Execution Time Limit Exceeded'));
+			}, 60000);
+		});
+
+		try {
+			const output = await Promise.race([executeCode(localStorage.token, bash), timeoutPromise]);
+			if (timedOut) {
+				stderr = 'Execution Time Limit Exceeded';
+			} else if (output) {
+				if (output['stdout']) stdout = output['stdout'];
+				if (output['stderr']) stderr = output['stderr'];
+				if (output['result']) result = output['result'];
+			}
+		} catch (e) {
+			stderr = e.message || 'Execution failed';
+		} finally {
+			clearTimeout(timeoutId);
+			// Cleanup: delete the source file
+			const cleanupCmd = `%%bash\nrm -f ${filename}`;
+			await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+			executing = false;
+		}
+	};
+
+	const executeJupyterLatex = async (code) => {
+		result = null;
+		stdout = null;
+		stderr = null;
+		files = null;
+		executing = true;
+
+		if (!$config?.code?.engine || $config?.code?.engine !== 'jupyter') {
+			toast.error('Jupyter engine is required for LaTeX execution.');
+			executing = false;
+			return;
+		}
+
+		const filename = `temp_${uuidv4()}.tex`;
+		const pdffile = filename.replace(/\.tex$/, '.pdf');
+		const writefile = `%%writefile ${filename}\n${code}`;
+		const compileCmd = `timeout 59s pdflatex -interaction=nonstopmode -halt-on-error -no-shell-escape ${filename}`;
+		const bashCompile = `%%bash\n${compileCmd}`;
+		const base64Cmd = `%%bash\nif [ -f ${pdffile} ]; then base64 ${pdffile}; fi`;
+		const cleanupCmd = `%%bash\nrm -f ${filename} ${filename.replace(/\.tex$/, '.aux')} ${filename.replace(/\.tex$/, '.log')} ${pdffile}`;
+
+		// Write .tex file
+		const writeOutput = await executeCode(localStorage.token, writefile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!writeOutput) {
+			executing = false;
+			return;
+		}
+
+		// Compile with pdflatex
+		const compileOutput = await executeCode(localStorage.token, bashCompile).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (!compileOutput || compileOutput.stderr) {
+			stderr = compileOutput?.stderr || 'LaTeX compilation failed.';
+			executing = false;
+			await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+			return;
+		}
+
+		// Read PDF as base64
+		const base64Output = await executeCode(localStorage.token, base64Cmd).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (base64Output && base64Output.stdout) {
+			files = [
+				{
+					type: 'application/pdf',
+					data: `data:application/pdf;base64,${base64Output.stdout.replace(/\s/g, '')}`
+				}
+			];
+			result = 'PDF generated';
+		} else {
+			stderr = 'PDF generation failed';
+		}
+
+		// Cleanup
+		await executeCode(localStorage.token, cleanupCmd).catch(() => {});
+		executing = false;
+	};
+
 	let debounceTimeout;
 
 	const drawMermaidDiagram = async () => {
@@ -439,7 +905,7 @@
 						</div>
 					</button>
 
-					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)))}
+					{#if ($config?.features?.enable_code_execution ?? true) && (lang.toLowerCase() === 'python' || lang.toLowerCase() === 'py' || (lang === '' && checkPythonCode(code)) || lang.toLowerCase() === 'c' || lang.toLowerCase() === 'cpp' || lang.toLowerCase() === 'fortran' || (lang === '' && (checkCCode(code) || checkCppCode(code) || checkFortranCode(code))) || lang.toLowerCase() === 'lua' || (lang === '' && checkLuaCode(code)) || lang.toLowerCase() === 'php' || (lang === '' && checkPhpCode(code)) || lang.toLowerCase() === 'latex' || (lang === '' && checkLatexCode(code)))}
 						{#if executing}
 							<div class="run-code-button bg-none border-none p-1 cursor-not-allowed">
 								{$i18n.t('Running')}
@@ -450,16 +916,58 @@
 								on:click={async () => {
 									code = _code;
 									await tick();
-									executePython(code);
+									if (
+										lang.toLowerCase() === 'python' ||
+										lang.toLowerCase() === 'py' ||
+										(lang === '' && checkPythonCode(code))
+									) {
+										executePython(code);
+									} else if (
+										lang.toLowerCase() === 'c' ||
+										lang.toLowerCase() === 'cpp' ||
+										lang.toLowerCase() === 'fortran' ||
+										(lang === '' &&
+											(checkCCode(code) || checkCppCode(code) || checkFortranCode(code)))
+									) {
+										let detectedLang = lang.toLowerCase();
+										if (lang === '') {
+											if (checkCppCode(code)) detectedLang = 'cpp';
+											else if (checkCCode(code)) detectedLang = 'c';
+											else if (checkFortranCode(code)) detectedLang = 'fortran';
+										}
+										executeJupyterCompiled(detectedLang, code);
+									} else if (lang.toLowerCase() === 'lua' || (lang === '' && checkLuaCode(code))) {
+										if (!isCodeSafe(code, 'lua')) {
+											toast.error(
+												'Code contains potentially dangerous operations and was blocked.'
+											);
+											return;
+										}
+										executeJupyterScript('lua', code);
+									} else if (lang.toLowerCase() === 'php' || (lang === '' && checkPhpCode(code))) {
+										if (!isCodeSafe(code, 'php')) {
+											toast.error(
+												'Code contains potentially dangerous operations and was blocked.'
+											);
+											return;
+										}
+										executeJupyterScript('php', code);
+									} else if (
+										lang.toLowerCase() === 'latex' ||
+										(lang === '' && checkLatexCode(code))
+									) {
+										if (!isCodeSafe(code, 'latex')) {
+											toast.error(
+												'Code contains potentially dangerous operations and was blocked.'
+											);
+											return;
+										}
+										executeJupyterLatex(code);
+									}
 								}}
 							>
-								<div>
-									<CommandLine className="size-3" />
-								</div>
-
-								<div>
-									{$i18n.t('Run')}
-								</div>
+								<CommandLine className="size-3" />
+								<span>{$i18n.t('Run')}</span>
 							</button>
 						{/if}
 					{/if}
@@ -477,6 +985,19 @@
 						class="copy-code-button bg-none border-none bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-md px-1.5 py-0.5"
 						on:click={copyCode}>{copied ? $i18n.t('Copied') : $i18n.t('Copy')}</button
 					>
+
+					{#if hasDownloadExtension}
+						<button
+							class="download-code-button bg-none border-none bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-md px-1.5 py-0.5"
+							on:click={() => {
+								downloadCode(code, lang);
+								downloaded = true;
+								setTimeout(() => (downloaded = false), 1000);
+							}}
+						>
+							{downloaded ? $i18n.t('Downloaded') : '↓ ' + $i18n.t('Download')}
+						</button>
+					{/if}
 				</div>
 			</div>
 
@@ -530,7 +1051,19 @@
 								<div class="text-sm">Running...</div>
 							</div>
 						{:else}
-							{#if stdout || stderr}
+							{#if cleanOutput(stderr)}
+								<div class=" ">
+									<div class=" text-gray-500 text-xs mb-1">STDOUT/STDERR</div>
+									<div
+										class="text-sm {cleanOutput(stderr)?.split('\n')?.length > 100
+											? `max-h-96`
+											: ''}  overflow-y-auto"
+									>
+										{@html cleanOutput(stderr)}
+									</div>
+								</div>
+								{@html `<script>setTimeout(() => {window?.toast?.error?.('${cleanOutput(stderr).split('\\n')[0] || 'Error occurred'}')}, 0)</script>`}
+							{:else if stdout}
 								<div class=" ">
 									<div class=" text-gray-500 text-xs mb-1">STDOUT/STDERR</div>
 									<div
@@ -538,7 +1071,7 @@
 											? `max-h-96`
 											: ''}  overflow-y-auto"
 									>
-										{stdout || stderr}
+										{@html stdout}
 									</div>
 								</div>
 							{/if}
@@ -546,12 +1079,19 @@
 								<div class=" ">
 									<div class=" text-gray-500 text-xs mb-1">RESULT</div>
 									{#if result}
-										<div class="text-sm">{`${JSON.stringify(result)}`}</div>
+										<div class="text-sm">{result}</div>
 									{/if}
 									{#if files}
 										<div class="flex flex-col gap-2">
 											{#each files as file}
-												{#if file.type.startsWith('image')}
+												{#if file.type === 'application/pdf'}
+													<iframe
+														src={file.data}
+														width="100%"
+														height="600px"
+														style="border:1px solid #ccc; border-radius:8px; background:#fff;"
+													></iframe>
+												{:else if file.type.startsWith('image')}
 													<img src={file.data} alt="Output" class=" w-full max-w-[36rem]" />
 												{/if}
 											{/each}
