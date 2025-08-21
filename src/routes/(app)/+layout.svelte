@@ -55,6 +55,8 @@
 
 	let version;
 
+	const ENABLE_UPDATES = import.meta.env.VITE_ENABLE_UPDATES === 'true';
+
 	onMount(async () => {
 		if ($user === undefined || $user === null) {
 			await goto('/auth');
@@ -207,7 +209,7 @@
 			}
 
 			// Check for version updates
-			if ($user?.role === 'admin') {
+			if (ENABLE_UPDATES && $user?.role === 'admin') {
 				// Check if the user has dismissed the update toast in the last 24 hours
 				if (localStorage.dismissedUpdateToast) {
 					const dismissedUpdateToast = new Date(Number(localStorage.dismissedUpdateToast));
